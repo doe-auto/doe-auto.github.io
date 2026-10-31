@@ -108,12 +108,28 @@ details summary{cursor:pointer;font-weight:600;color:var(--accent)}
 .toast{position:fixed;left:50%;bottom:calc(20px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);background:var(--ink);color:var(--surface);padding:9px 14px;border-radius:8px;font-size:13px;opacity:0;transition:opacity .2s;pointer-events:none;max-width:calc(100% - 32px);z-index:50}
 .toast.on{opacity:1}
 @media (prefers-reduced-motion:reduce){*{transition:none!important}}
+/* Attestation de pose au format MAGENCIA (modèle FNTP) */
+.attp{background:#fff;color:#111;border:1px solid var(--line);border-radius:4px;padding:22px 20px;display:flex;flex-direction:column;gap:10px;font-size:13px}
+.attp h3{margin:0;font-family:var(--f-display);font-size:18px;text-align:center;letter-spacing:.02em}
+.attp .sub{text-align:center;font-weight:700;letter-spacing:.3em;font-size:13px}
+.attp table{width:100%;border-collapse:collapse}
+.attp td{border:1px solid #444;padding:6px 8px;vertical-align:top}
+.attp td.k{width:38%;font-weight:600;background:#f2f4f6}
+.attp .fin{border:1px solid #444;padding:10px;display:flex;flex-direction:column;gap:6px}
+.attp .sigbox{height:70px;border:1px dashed #888;margin-top:4px}
+.attp .foot{font-size:10px;color:#666;text-align:right}
+.attp .desc{white-space:pre-line}
+.bulk-log{font-family:var(--f-mono);font-size:12px;max-height:220px;overflow:auto;background:var(--paper);border:1px solid var(--line);border-radius:6px;padding:8px;white-space:pre-wrap}
 @media print{
   :root{--bg:#fff;--surface:#fff;--ink:#000;--muted:#444;--line:#bbb;--paper:#fff;--accent:#1d4ed8;color-scheme:light}
   body *{visibility:hidden}
-  #sheet,#sheet *{visibility:visible}
-  #sheet{position:absolute;left:0;top:0;width:100%;border:0;box-shadow:none;padding:0}
+  body[data-print="doe"] #sheet, body[data-print="doe"] #sheet *{visibility:visible}
+  body[data-print="doe"] #sheet{position:absolute;left:0;top:0;width:100%;border:0;box-shadow:none;padding:0}
+  body[data-print="att"] #atts, body[data-print="att"] #atts *{visibility:visible}
+  body[data-print="att"] #atts{position:absolute;left:0;top:0;width:100%}
   .cover{break-after:page}
+  .attp{break-before:page;border:0;padding:0}
+  #atts .attp:first-child{break-before:auto}
 }
 </style>
 </head>
@@ -409,6 +425,43 @@ function tabRelances(){
 }
 
 /* ---- Onglet DOE ---- */
+const euros = v=> v==null||v==="" ? "" : Number(v).toLocaleString("fr-FR",{minimumFractionDigits:2,maximumFractionDigits:2})+" € HT";
+const cp = a=> (String(a||"").match(/\b\d{5}\b/)||[""])[0];
+const coche = (v,oui)=> (v===oui?"☒":"☐");
+function attestationPose(l){
+  const c=S.ch, e=S.ent;
+  const desc=l.lignes_devis.map(li=>`${li.designation}${li.quantite!=null?" : "+String(li.quantite).replace(".",",")+" "+(li.unite||""):""}`).join("\n");
+  const ac=!!c.accord_cadre, st=!!c.sous_traite;
+  return `<article class="attp">
+    <h3>Attestation de travaux</h3>
+    <div class="sub">ATTESTATION DE POSE</div>
+    <table>
+      <tr><td class="k">Entreprise</td><td>${esc(e.nom)}</td></tr>
+      <tr><td class="k">Maître d'ouvrage</td><td>${esc(c.maitre_ouvrage||"")}</td></tr>
+      <tr><td class="k">Maître d'œuvre</td><td>${esc(c.maitre_oeuvre||"")}</td></tr>
+      <tr><td class="k">Désignation des travaux</td><td>${esc(c.designation_travaux||c.nom)}</td></tr>
+      <tr><td class="k">Désignation de la pose</td><td>${esc(l.designation)}</td></tr>
+      <tr><td class="k">S'agit-il d'un accord-cadre</td><td>${coche(ac,true)} oui &nbsp; ${coche(ac,false)} non</td></tr>
+      <tr><td class="k">Lieu des travaux</td><td>${esc(c.adresse||"")}</td></tr>
+      <tr><td class="k">Code postal</td><td class="mono">${esc(cp(c.adresse))}</td></tr>
+      <tr><td class="k">Date de début des travaux</td><td>${esc(c.date_debut||"")}</td></tr>
+      <tr><td class="k">Date de fin des travaux</td><td>${esc(c.date_fin||"")}</td></tr>
+      <tr><td class="k">Montant total HT des travaux de l'entreprise</td><td class="mono">${esc(euros(c.montant_ht))}</td></tr>
+      <tr><td class="k">Ces travaux ont-ils été sous-traités</td><td>${coche(st,true)} oui &nbsp; ${coche(st,false)} non</td></tr>
+      <tr><td class="k">Si oui, montant HT des travaux sous-traités</td><td class="mono">${st?esc(euros(c.montant_st)):""}</td></tr>
+      <tr><td class="k">Nature des travaux sous-traités</td><td>${esc(st?(c.nature_st||""):"Sans objet")}</td></tr>
+      <tr><td class="k">Description des travaux réalisés par l'entreprise hors sous-traitance et quantités mises en œuvre</td><td class="desc">${esc(desc)}</td></tr>
+    </table>
+    <div class="fin">
+      <div>Les travaux ont été effectués selon les règles de l'art et menés régulièrement à bonne fin.</div>
+      <div><b>Signataire :</b> ${esc(e.nom)}${c.signataire?" — "+esc(c.signataire):""}</div>
+      <div><b>Date :</b> ${frDate(c.date_attestation||c.date_reception)}</div>
+      <div class="sigbox"></div>
+    </div>
+    <div class="foot">FNTP/SIPE/BDH P2 MO12 V2-18/07/11</div>
+  </article>`;
+}
+
 function tabDOE(){
   const c=S.ch, e=S.ent, s=stats(), byL=rowsByLigne();
   const toc=S.lots.map(l=>{
@@ -417,14 +470,34 @@ function tabDOE(){
     return `<li class="sec"><span class="num">${esc(l.numero)}</span><span class="lbl">${esc(l.designation)}</span><span class="dots"></span><span class="st ${ph?"ok":"warn"}">${ph?ph+" photo"+(ph>1?"s":""):"photos à faire"}</span></li>${docs}
       <li><span class="lbl">${esc(l.numero)}.A Attestation de pose</span><span class="dots"></span><span class="st ok">générée</span></li>`;
   }).join("");
-  const atts=S.lots.map(l=>{
-    const dtus=[...new Set(l.lignes_devis.flatMap(li=>(byL[li.id]||[]).map(r=>r.dtu)).filter(Boolean))];
-    return `<div class="att"><h4><span class="num">${esc(l.numero)}.A</span>Attestation de pose — ${esc(l.designation)}</h4>
-      <p>Je soussigné ${esc(c.signataire||S.nomAffiche||"……")}, représentant la société ${esc(e.nom)}, atteste que les ouvrages du lot « ${esc(l.designation)} » réalisés sur le chantier ${esc(c.nom)}${c.adresse?", "+esc(c.adresse):""}, ont été mis en œuvre conformément aux règles de l'art${dtus.length?", aux "+esc(dtus.join(", ")):""} et aux prescriptions des fabricants des produits listés au présent dossier.</p>
-      <div class="sign"><span>Fait à ${esc(e.ville||"……")}, le ${frDate(c.date_reception)}</span><span>Signature et cachet</span></div></div>`;
-  }).join("");
-  return `<div class="row between"><h2>Aperçu du DOE</h2><button class="btn" data-act="print">Imprimer / PDF</button></div>
-    <div class="hint">« Imprimer / PDF » produit la page de garde, le sommaire et les attestations. La fusion automatique des fiches techniques en un seul PDF viendra dans une prochaine version.</div>
+  const atts=S.lots.map(l=>attestationPose(l)).join("");
+  const miss=[!c.maitre_ouvrage&&"maître d'ouvrage",!c.designation_travaux&&"désignation des travaux",!c.date_debut&&"date de début",!c.date_fin&&"date de fin",(c.montant_ht==null)&&"montant HT"].filter(Boolean);
+  return `<div class="box">
+      <div class="row between"><h2>Attestations de pose</h2><span class="badge">${S.lots.length} attestation${S.lots.length>1?"s":""}</span></div>
+      <div class="hint">Une attestation par lot, au format MAGENCIA, remplie avec le devis. ${miss.length?`<b>À compléter :</b> ${miss.join(", ")}.`:"Toutes les informations sont renseignées."}</div>
+      <details ${miss.length?"open":""}><summary>Informations des attestations</summary>
+        <form data-form="infos" style="display:flex;flex-direction:column;gap:12px;margin-top:12px">
+          <div class="grid2">
+            <label class="f">Maître d'ouvrage<input type="text" id="i-moa" value="${esc(c.maitre_ouvrage||"")}"></label>
+            <label class="f">Maître d'œuvre<input type="text" id="i-moe" value="${esc(c.maitre_oeuvre||"")}"></label>
+            <label class="f">Désignation des travaux<input type="text" id="i-des" value="${esc(c.designation_travaux||"")}" placeholder="ex. aménagement d'une cantine partagée"></label>
+            <label class="f">Lieu des travaux (adresse)<input type="text" id="i-adr" value="${esc(c.adresse||"")}"></label>
+            <label class="f">Début des travaux<input type="text" id="i-deb" value="${esc(c.date_debut||"")}" placeholder="ex. Juillet 2025"></label>
+            <label class="f">Fin des travaux<input type="text" id="i-fin" value="${esc(c.date_fin||"")}" placeholder="ex. Septembre 2025"></label>
+            <label class="f">Montant total HT de l'entreprise (€)<input type="text" id="i-mt" inputmode="decimal" value="${c.montant_ht??""}"></label>
+            <label class="f">Date de l'attestation<input type="date" id="i-date" value="${esc(c.date_attestation||c.date_reception||"")}"></label>
+            <label class="f">Accord-cadre<select id="i-ac"><option value="false" ${c.accord_cadre?"":"selected"}>Non</option><option value="true" ${c.accord_cadre?"selected":""}>Oui</option></select></label>
+            <label class="f">Travaux sous-traités<select id="i-st"><option value="false" ${c.sous_traite?"":"selected"}>Non</option><option value="true" ${c.sous_traite?"selected":""}>Oui</option></select></label>
+            <label class="f">Montant HT sous-traité (€)<input type="text" id="i-mst" inputmode="decimal" value="${c.montant_st??""}"></label>
+            <label class="f">Nature des travaux sous-traités<input type="text" id="i-nst" value="${esc(c.nature_st||"")}" placeholder="Sans objet"></label>
+          </div>
+          <button class="btn" type="submit">Enregistrer</button>
+        </form></details>
+      <div class="row"><button class="btn" data-act="print-att">Imprimer / PDF des attestations</button></div>
+    </div>
+    <div id="atts" class="list">${atts}</div>
+    <div class="row between"><h2>Aperçu du DOE</h2><button class="btn" data-act="print">Imprimer / PDF du DOE</button></div>
+    <div class="hint">Le DOE imprimé contient la page de garde, le sommaire et les attestations. La fusion automatique des fiches techniques en un seul PDF viendra dans une prochaine version.</div>
     <div class="sheet" id="sheet">
       <div class="cover">
         <div class="kicker">Dossier des Ouvrages Exécutés</div>
@@ -443,6 +516,11 @@ function viewBiblio(){
   return `<section class="panel">
     <div class="row between"><h1>Bibliothèque produits</h1><span class="badge">${S.produits.length} produits · ${nbDocs} documents</span></div>
     ${S.produits.length?"":`<div class="box"><h2>Démarrer</h2><div class="hint">Charge 9 produits courants (plâtrerie, peinture, sols, menuiserie) avec leurs pièces exigées et leurs mots-clés. Tu ajoutes ensuite tes PDF.</div><div class="row"><button class="btn" data-act="seed">Charger la bibliothèque de départ</button></div></div>`}
+    <div class="box"><h2>Importer plusieurs PDF</h2>
+      <div class="hint">Sélectionne d'un coup toutes tes fiches techniques et PV. Un produit est créé par nom de fichier, et le document est classé en fiche technique, PV, FDES ou fiche produit d'après son nom. Les fichiers liés au même produit sont regroupés, par exemple « PV Feu - Udirev » et « Fiche technique - Udirev ».</div>
+      <div class="row"><label class="btn" for="bulk-files" style="position:relative">Choisir les PDF<input type="file" id="bulk-files" accept=".pdf,application/pdf" multiple style="position:absolute;width:1px;height:1px;opacity:0;left:0;top:0"></label></div>
+      ${S.bulkLog?`<div class="bulk-log" id="bulk-log">${esc(S.bulkLog)}</div>`:""}
+    </div>
     <details class="box"><summary>Ajouter un produit</summary>
       <form data-form="produit" style="display:flex;flex-direction:column;gap:12px;margin-top:12px">
         <div class="grid2">
@@ -557,6 +635,60 @@ async function creerProduit({nom,dtu,four,mots,pieces}){
   const [p]=await q(sb.from("produits").insert({entreprise_id:S.ent.id,nom,dtu:dtu||null,fournisseur_id:fid,mots_cles:mots}).select());
   if(pieces.length) await q(sb.from("pieces_requises").insert(pieces.map((l,i)=>({entreprise_id:S.ent.id,produit_id:p.id,libelle:l,ordre:i}))));
 }
+/* ---- Import groupé : nom de fichier → produit + type de pièce ---- */
+const MOTS_DOC = /\b(pv|feu|acoustique|fiche|fiches|technique|produit|ft|ftprod|fdes|fds|fichetechnique)\b/g;
+function analyseNom(fichier){
+  let n=fichier.replace(/\.pdf$/i,"").replace(/^[\d.]+\s+/,"").replace(/[+_]/g," ").replace(/\s+/g," ").trim();
+  const all=n.split(/\s+-\s+/);
+  const estDoc=p=>norm(p).replace(MOTS_DOC,"").replace(/[\s-]/g,"")==="";
+  const docPart=norm(all.filter(estDoc).join(" "));
+  const t=docPart||norm(n);
+  let type="Fiche technique";
+  if(/\bfdes\b|environnementale/.test(t)) type="FDES";
+  else if(/\bfds\b/.test(t)) type="Fiche de données de sécurité";
+  else if(/(^|[\s-])pv([\s-]|$)|proces.verbal/.test(t)) type = /acousti/.test(t) ? "PV acoustique" : /feu|\b(r|e|ei|rei)\s?\d{2,3}\b|coupe.feu|\bcf\b/.test(t) ? "PV feu" : "PV";
+  else if(/fiche[\s-]produit/.test(t)) type="Fiche produit";
+  let parts=all.filter(p=>!estDoc(p));
+  let nom=(parts.length?parts.join(" - "):n);
+  for(let i=0;i<3;i++) nom=nom.replace(/^(ftprod|fichetechnique|fiche[\s-]technique|fiche[\s-]produit|fiche|ft|pv)[\s.-]+/i,"").trim();
+  nom=nom.replace(/[\s-]+(ft|pv|fiche technique)$/i,"").trim();
+  if(!nom || norm(nom).replace(MOTS_DOC,"").trim()==="") nom=fichier.replace(/\.pdf$/i,"");
+  return {nom, type};
+}
+async function importGroupe(input){
+  const files=[...input.files]; if(!files.length) return;
+  const ent=S.ent.id; let ok=0, err=0;
+  const log=m=>{ S.bulkLog=(S.bulkLog||"")+m+"\n"; const el=$("#bulk-log"); if(el){ el.textContent=S.bulkLog; el.scrollTop=1e9; } };
+  S.bulkLog=""; render(); log(`${files.length} fichier(s) à importer…`);
+  await loadBiblio();
+  for(const f of files){
+    try{
+      if(f.size>50*1024*1024){ log(`✗ ${f.name} : trop lourd (plus de 50 Mo)`); err++; continue; }
+      const {nom,type}=analyseNom(f.name);
+      let p=S.produits.find(x=>norm(x.nom)===norm(nom));
+      if(!p){
+        const [np]=await q(sb.from("produits").insert({entreprise_id:ent,nom,mots_cles:[]}).select());
+        p={...np,pieces_requises:[]}; S.produits.push(p);
+      }
+      let lib=type, k=2;
+      while(p.pieces_requises.some(r=>norm(r.libelle)===norm(lib) && r.documents && r.documents.length)) lib=`${type} ${k++}`;
+      let piece=p.pieces_requises.find(r=>norm(r.libelle)===norm(lib));
+      if(!piece){
+        const [npc]=await q(sb.from("pieces_requises").insert({entreprise_id:ent,produit_id:p.id,libelle:lib,ordre:p.pieces_requises.length}).select());
+        piece={...npc,documents:[]}; p.pieces_requises.push(piece);
+      }
+      const path=`${ent}/produits/${p.id}/${Date.now()}-${safeName(f.name)}`;
+      const {error}=await sb.storage.from("documents").upload(path,f,{contentType:"application/pdf"});
+      if(error) throw error;
+      await q(sb.from("documents").insert({entreprise_id:ent,piece_requise_id:piece.id,storage_path:path,nom_fichier:f.name,source:"upload"}));
+      piece.documents.push({storage_path:path,nom_fichier:f.name,created_at:new Date().toISOString()});
+      ok++; log(`✓ ${nom} — ${lib}`);
+    }catch(e){ err++; log(`✗ ${f.name} : ${messageErreur(e)}`); }
+  }
+  log(`Terminé : ${ok} importé(s)${err?`, ${err} en erreur`:""}.`);
+  await loadBiblio(); render(); toast(`${ok} document(s) importé(s)`);
+}
+
 async function seedBiblio(){
   toast("Chargement de la bibliothèque…");
   for(const x of LIB_DEPART) await creerProduit({nom:x.nom,dtu:x.dtu,four:x.f,mots:x.mots,pieces:x.pieces});
@@ -583,7 +715,8 @@ document.addEventListener("click",async e=>{
     else if(a==="copymail") await copyMail(+b.dataset.i);
     else if(a==="sent") await busy(b,()=>markSent(+b.dataset.i));
     else if(a==="seed") await busy(b,seedBiblio);
-    else if(a==="print") window.print();
+    else if(a==="print"){ document.body.dataset.print="doe"; window.print(); }
+    else if(a==="print-att"){ document.body.dataset.print="att"; window.print(); }
   }catch(err){}
 });
 document.addEventListener("keydown",e=>{ if(e.key==="Enter" && e.target.matches('[role="link"][data-act]')) e.target.click(); });
@@ -591,7 +724,8 @@ document.addEventListener("keydown",e=>{ if(e.key==="Enter" && e.target.matches(
 document.addEventListener("change",async e=>{
   const t=e.target;
   try{
-    if(t.matches("input[type=file][data-piece]")) await uploadDoc(t);
+    if(t.id==="bulk-files") await importGroupe(t);
+    else if(t.matches("input[type=file][data-piece]")) await uploadDoc(t);
     else if(t.matches("input[type=file][data-lotphoto]")) await uploadPhotos(t);
     else if(t.matches("select[data-ligne]")){
       await q(sb.from("lignes_devis").update({produit_id:t.value||null}).eq("id",t.dataset.ligne));
@@ -631,6 +765,17 @@ document.addEventListener("submit",async e=>{
       const [c]=await q(sb.from("chantiers").insert({entreprise_id:S.ent.id,nom:$("#n-nom").value.trim(),adresse:$("#n-adr").value.trim()||null,
         maitre_ouvrage:$("#n-moa").value.trim()||null,maitre_oeuvre:$("#n-moe").value.trim()||null,date_reception:$("#n-date").value||null,signataire:$("#n-sign").value.trim()||null}).select());
       S.chantiers.unshift(c); await openChantier(c.id);
+    }
+    if(k==="infos"){
+      const num=v=>{ v=String(v).replace(/\s|€|HT/gi,"").replace(",","."); return v===""?null:Number(v); };
+      const upd={maitre_ouvrage:$("#i-moa").value.trim()||null,maitre_oeuvre:$("#i-moe").value.trim()||null,designation_travaux:$("#i-des").value.trim()||null,
+        adresse:$("#i-adr").value.trim()||null,date_debut:$("#i-deb").value.trim()||null,date_fin:$("#i-fin").value.trim()||null,
+        montant_ht:num($("#i-mt").value),date_attestation:$("#i-date").value||null,accord_cadre:$("#i-ac").value==="true",
+        sous_traite:$("#i-st").value==="true",montant_st:num($("#i-mst").value),nature_st:$("#i-nst").value.trim()||null};
+      if([upd.montant_ht,upd.montant_st].some(x=>x!==null&&isNaN(x))) return toast("Montant invalide : écris un nombre, par exemple 56604,84");
+      const [c]=await q(sb.from("chantiers").update(upd).eq("id",S.ch.id).select());
+      S.ch=c; const i=S.chantiers.findIndex(x=>x.id===c.id); if(i>=0) S.chantiers[i]=c;
+      render(); toast("Informations enregistrées");
     }
     if(k==="produit"){
       const split=v=>v.split(",").map(x=>x.trim()).filter(Boolean);
