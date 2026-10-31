@@ -1,0 +1,658 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>DOE Auto</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@600;800&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+:root{
+  --bg:#eef1f4; --surface:#ffffff; --ink:#18212b; --muted:#5b6876; --line:#d5dbe2;
+  --accent:#1d4ed8; --accent-soft:#e3eafc; --ok:#15803d; --ok-soft:#e2f4e8; --warn:#b45309; --warn-soft:#fbefdc; --bad:#b91c1c; --bad-soft:#fbe4e4;
+  --paper:#fbfcfd;
+  --f-display:"Archivo","Arial Narrow",Arial,sans-serif;
+  --f-body:"IBM Plex Sans",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --f-mono:"IBM Plex Mono",ui-monospace,Menlo,Consolas,monospace;
+  color-scheme:light;
+}
+@media (prefers-color-scheme:dark){:root{
+  --bg:#11161c; --surface:#1a2129; --ink:#e6ebf0; --muted:#97a3b0; --line:#2c3642;
+  --accent:#7aa2ff; --accent-soft:#1d2b4a; --ok:#5fd08a; --ok-soft:#163223; --warn:#f0b260; --warn-soft:#3a2a12; --bad:#f08a8a; --bad-soft:#3d1a1a;
+  --paper:#161c23; color-scheme:dark}}
+*{box-sizing:border-box}
+html,body{margin:0}
+body{background:var(--bg);color:var(--ink);font-family:var(--f-body);font-size:15px;line-height:1.5;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+.wrap{max-width:880px;margin:0 auto;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:0 56px}
+header.top{padding-block:16px 10px;display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap}
+.brand{font-family:var(--f-display);font-weight:800;font-size:24px;letter-spacing:-.01em;cursor:pointer}
+.brand small{font-family:var(--f-body);font-weight:500;font-size:13px;color:var(--muted);margin-left:8px;letter-spacing:0}
+.mainnav{display:flex;gap:6px;flex-wrap:wrap}
+.tabs{position:sticky;top:0;z-index:5;background:var(--bg);padding-block:10px;display:grid;grid-template-columns:repeat(4,1fr);gap:5px;border-bottom:1px solid var(--line)}
+.tabs button{font:inherit;font-size:13px;font-weight:600;border:1px solid var(--line);background:var(--surface);color:var(--muted);padding:8px 2px;border-radius:8px;cursor:pointer;min-width:0}
+.tabs button[aria-selected="true"]{border-color:var(--accent);color:var(--accent);background:var(--accent-soft)}
+button:focus-visible,input:focus-visible,textarea:focus-visible,select:focus-visible,a:focus-visible,label.up:focus-within{outline:2px solid var(--accent);outline-offset:2px}
+.panel{display:flex;flex-direction:column;gap:16px;padding-top:16px}
+h1{font-family:var(--f-display);font-weight:800;font-size:22px;margin:0;text-wrap:balance}
+h2{font-family:var(--f-display);font-weight:600;font-size:18px;margin:0;text-wrap:balance}
+.box{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:16px;display:flex;flex-direction:column;gap:12px}
+.narrow{max-width:420px;margin:40px auto 0}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+@media (max-width:560px){.grid2{grid-template-columns:1fr}}
+label.f{display:flex;flex-direction:column;gap:4px;font-size:12px;color:var(--muted);font-weight:500;letter-spacing:.02em}
+input[type=text],input[type=email],input[type=password],input[type=date],textarea,select{font:inherit;font-size:14px;color:var(--ink);background:var(--paper);border:1px solid var(--line);border-radius:6px;padding:8px 10px;width:100%;min-width:0}
+textarea{font-family:var(--f-mono);font-size:12.5px;min-height:170px;resize:vertical;white-space:pre;overflow-x:auto}
+textarea.mail{font-family:var(--f-body);font-size:13.5px;white-space:pre-wrap;min-height:220px}
+.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.between{justify-content:space-between}
+.btn{font:inherit;font-weight:600;font-size:14px;border-radius:8px;padding:9px 14px;cursor:pointer;border:1px solid var(--accent);background:var(--accent);color:var(--surface);text-decoration:none;display:inline-flex;align-items:center;gap:6px}
+.btn.ghost{background:transparent;color:var(--accent)}
+.btn.small{font-size:13px;padding:6px 10px}
+.btn.danger{border-color:var(--bad);background:var(--bad);color:var(--surface)}
+.btn[disabled]{opacity:.5;cursor:wait}
+.link{background:none;border:0;padding:0;font:inherit;color:var(--accent);cursor:pointer;font-weight:600}
+.hint{font-size:12.5px;color:var(--muted)}
+.err{font-size:13px;color:var(--bad)}
+.mono{font-family:var(--f-mono);font-variant-numeric:tabular-nums}
+.bar{height:8px;background:var(--line);border-radius:99px;overflow:hidden}
+.bar i{display:block;height:100%;background:var(--ok);border-radius:99px;transition:width .3s}
+.stats{display:flex;gap:16px;flex-wrap:wrap;font-size:13px;color:var(--muted)}
+.stats b{color:var(--ink);font-family:var(--f-mono);font-weight:500}
+.list{display:flex;flex-direction:column;gap:12px}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:14px 16px;display:flex;justify-content:space-between;gap:10px;align-items:center;cursor:pointer;text-align:left;font:inherit;color:inherit;width:100%}
+.card:hover{border-color:var(--accent)}
+.card .meta{font-size:13px;color:var(--muted)}
+.lot{background:var(--surface);border:1px solid var(--line);border-radius:10px;overflow:hidden}
+.lot>header{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:12px 14px;border-bottom:1px solid var(--line);flex-wrap:wrap}
+.lot>header h3{margin:0;font-family:var(--f-display);font-weight:600;font-size:16px;min-width:0}
+.num{font-family:var(--f-mono);color:var(--accent);font-weight:500;margin-right:6px}
+.item{padding:12px 14px;border-bottom:1px solid var(--line);display:flex;flex-direction:column;gap:8px}
+.item:last-child{border-bottom:0}
+.item .t{display:flex;justify-content:space-between;gap:10px;align-items:baseline}
+.item .t>div{min-width:0}
+.qty{font-family:var(--f-mono);font-size:12.5px;color:var(--muted);white-space:nowrap}
+.prod{font-size:13px;color:var(--muted)}
+.chips{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.chip{font:inherit;font-size:12px;font-weight:500;border-radius:99px;padding:3px 10px;border:1px solid transparent;display:inline-flex;align-items:center;gap:5px}
+.chip::before{content:"";width:7px;height:7px;border-radius:50%;background:currentColor}
+.chip.ok{background:var(--ok-soft);color:var(--ok)}
+.chip.warn{background:var(--warn-soft);color:var(--warn)}
+.chip.bad{background:var(--bad-soft);color:var(--bad)}
+button.chip{cursor:pointer}
+.photos{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.photos img{width:64px;height:64px;object-fit:cover;border-radius:6px;border:1px solid var(--line)}
+.up{font-size:12.5px;color:var(--accent);font-weight:600;cursor:pointer;border:1px dashed var(--accent);border-radius:6px;padding:4px 9px;white-space:nowrap;position:relative}
+.up input{position:absolute;width:1px;height:1px;opacity:0;left:0;top:0}
+.badge{font-family:var(--f-mono);font-size:11px;color:var(--muted);border:1px solid var(--line);border-radius:4px;padding:1px 6px;white-space:nowrap}
+.confirm{background:var(--bad-soft);border-radius:8px;padding:10px 12px;display:flex;flex-direction:column;gap:8px;font-size:13.5px}
+details summary{cursor:pointer;font-weight:600;color:var(--accent)}
+.sheet{background:var(--paper);border:1px solid var(--line);border-radius:4px;padding:28px 22px;display:flex;flex-direction:column;gap:14px;box-shadow:0 8px 24px -16px rgba(0,0,0,.25)}
+.cover{border:2px solid var(--ink);padding:22px 18px;display:flex;flex-direction:column;gap:14px}
+.cover .kicker{font-family:var(--f-mono);font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--muted)}
+.cover .ttl{font-family:var(--f-display);font-weight:800;font-size:clamp(22px,5vw,30px);line-height:1.1;margin:0;text-wrap:balance}
+.cover dl{display:grid;grid-template-columns:auto 1fr;gap:4px 14px;margin:0;font-size:13.5px}
+.cover dt{color:var(--muted)} .cover dd{margin:0;font-weight:500;min-width:0}
+.toc{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;font-size:14px}
+.toc li{display:flex;gap:8px;align-items:baseline;padding:4px 0}
+.toc li.sec{font-weight:600;padding-top:10px}
+.toc .dots{flex:1;border-bottom:1px dotted var(--line);transform:translateY(-4px);min-width:12px}
+.toc .st{font-family:var(--f-mono);font-size:11.5px;white-space:nowrap}
+.st.ok{color:var(--ok)} .st.warn{color:var(--warn)} .st.bad{color:var(--bad)}
+.toc .lbl{min-width:0}
+.att{border-top:1px solid var(--line);padding-top:14px;font-size:13.5px;display:flex;flex-direction:column;gap:8px;break-inside:avoid}
+.att h4{margin:0;font-family:var(--f-display);font-weight:600;font-size:15px}
+.att p{margin:0;max-width:68ch}
+.sign{display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;color:var(--muted);font-size:12.5px}
+.empty{color:var(--muted);text-align:center;padding:24px 8px}
+.loading{color:var(--muted);padding:40px 0;text-align:center}
+.toast{position:fixed;left:50%;bottom:calc(20px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);background:var(--ink);color:var(--surface);padding:9px 14px;border-radius:8px;font-size:13px;opacity:0;transition:opacity .2s;pointer-events:none;max-width:calc(100% - 32px);z-index:50}
+.toast.on{opacity:1}
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+@media print{
+  :root{--bg:#fff;--surface:#fff;--ink:#000;--muted:#444;--line:#bbb;--paper:#fff;--accent:#1d4ed8;color-scheme:light}
+  body *{visibility:hidden}
+  #sheet,#sheet *{visibility:visible}
+  #sheet{position:absolute;left:0;top:0;width:100%;border:0;box-shadow:none;padding:0}
+  .cover{break-after:page}
+}
+</style>
+</head>
+<body>
+<div class="wrap" id="app"><div class="loading">Chargement…</div></div>
+<div class="toast" id="toast" role="status"></div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
+<script>
+/* ===================== CONFIG ===================== */
+const SB_URL = "https://ngsokjiivtukcnpkggtz.supabase.co";
+const SB_KEY = "sb_publishable_sXPzfDbrAxOXNkOn-Rvqcg_r6ApVmkI";
+const sb = supabase.createClient(SB_URL, SB_KEY);
+
+/* Bibliothèque de départ (chargée à la demande, sans documents) */
+const LIB_DEPART = [
+  {nom:"Plaque de plâtre BA13 + ossature 48", dtu:"DTU 25.41", f:"Négoce plâtrerie", mots:["cloison","ba13"], pieces:["Fiche technique plaque","Fiche technique ossature","PV de résistance au feu"]},
+  {nom:"Complexe de doublage PSE 10+80", dtu:"DTU 25.42", f:"Négoce plâtrerie", mots:["doublage"], pieces:["Fiche technique","Certificat ACERMI"]},
+  {nom:"Panneau laine minérale 45 mm", dtu:"DTU 25.41", f:"Négoce plâtrerie", mots:["isolant","laine"], pieces:["Fiche technique","Certificat ACERMI","FDES"]},
+  {nom:"Dalle minérale 600×600 + ossature T24", dtu:"DTU 58.1", f:"Négoce plâtrerie", mots:["faux plafond","dalle"], pieces:["Fiche technique dalle","PV réaction au feu","Fiche technique ossature"]},
+  {nom:"Enduit à joint + bande papier", dtu:"DTU 25.41", f:"Négoce plâtrerie", mots:["enduit","bande"], pieces:["Fiche technique"]},
+  {nom:"Peinture acrylique mate intérieure", dtu:"DTU 59.1", f:"Distributeur peinture", mots:["peinture"], pieces:["Fiche technique","Fiche de données de sécurité"]},
+  {nom:"Revêtement PVC en lés U3P3", dtu:"DTU 53.2", f:"Distributeur sols", mots:["pvc","lino","lvt"], pieces:["Fiche technique","PV classement UPEC","Notice d'entretien"]},
+  {nom:"Plinthe MDF à peindre", dtu:"", f:"Négoce bois", mots:["plinthe"], pieces:["Fiche technique"]},
+  {nom:"Bloc-porte âme pleine", dtu:"DTU 36.2", f:"Négoce bois", mots:["bloc-porte","porte"], pieces:["Fiche technique","Notice de pose","PV acoustique"]},
+];
+const EXEMPLE_DEVIS = `1;PLÂTRERIE - CLOISONS;;
+1.1;Cloison 72/48 BA13 une peau de chaque côté;m²;84
+1.2;Doublage collé 10+80 sur murs périphériques;m²;46
+1.3;Isolant laine minérale 45 mm dans cloisons;m²;84
+1.4;Faux plafond dalles 600x600 sur ossature;m²;120
+2;PEINTURE;;
+2.1;Enduit de lissage et bandes sur plaques;m²;210
+2.2;Peinture acrylique mate 2 couches murs;m²;210
+3;REVÊTEMENTS DE SOL;;
+3.1;Sol PVC en lés U3P3 compris ragréage;m²;95
+3.2;Plinthes bois à peindre;ml;62
+4;MENUISERIES INTÉRIEURES;;
+4.1;Bloc-porte âme pleine 83x204;u;6`;
+
+const LBL = {en_bibliotheque:"jointe", expiree:"expirée", demandee:"demandée", manquante:"manquante"};
+const CLS = {en_bibliotheque:"ok", expiree:"bad", demandee:"warn", manquante:"bad"};
+
+/* ===================== ÉTAT ===================== */
+const S = { user:null, ent:null, role:null, nomAffiche:"", view:"chantiers", tab:"pieces",
+  chantiers:[], ch:null, lots:[], rows:[], photos:{}, produits:[], fourn:[], confirmReplace:false, authMode:"login" };
+
+/* ===================== OUTILS ===================== */
+const $ = s=>document.querySelector(s);
+const esc = s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const norm = s=>String(s||"").normalize("NFD").replace(/[̀-ͯ]/g,"").toLowerCase();
+const frDate = d=>d? new Date(d+"T12:00:00").toLocaleDateString("fr-FR") : "—";
+const safeName = n=>norm(n).replace(/[^a-z0-9.]+/g,"-").replace(/^-+|-+$/g,"").slice(-80) || "fichier";
+function toast(m){ const t=$("#toast"); t.textContent=m; t.classList.add("on"); clearTimeout(t._h); t._h=setTimeout(()=>t.classList.remove("on"),2600); }
+async function q(p){ const {data,error}=await p; if(error){ console.error(error); toast(messageErreur(error)); throw error; } return data; }
+function messageErreur(e){
+  const m=e.message||String(e);
+  if(/Invalid login/i.test(m)) return "E-mail ou mot de passe incorrect.";
+  if(/Email not confirmed/i.test(m)) return "Confirme d'abord ton e-mail (lien reçu par mail).";
+  if(/permission denied/i.test(m)) return "Accès refusé par la base : vérifie les droits (voir la notice).";
+  if(/row-level security/i.test(m)) return "Action refusée : cet élément n'appartient pas à ton entreprise.";
+  return m;
+}
+async function busy(btn, fn){ if(btn) btn.disabled=true; try{ await fn(); } catch(e){} finally{ if(btn) btn.disabled=false; } }
+
+/* Reconnaissance produit : le mot-clé qui apparaît le plus tôt dans la désignation gagne */
+function matchProduit(des){
+  const d=norm(des); let best=null, pos=Infinity;
+  S.produits.forEach(p=>(p.mots_cles||[]).forEach(k=>{ const i=d.indexOf(norm(k)); if(i>=0 && i<pos){ pos=i; best=p; } }));
+  return best;
+}
+function parseDevis(txt){
+  const lots=[]; let cur=null;
+  txt.split(/\r?\n/).forEach(raw=>{
+    const line=raw.trim(); if(!line) return;
+    const [n,des,u,qte]=line.split(/\t|;/).map(x=>(x||"").trim());
+    if(!des) return;
+    if(!u){ cur={numero:n,designation:des,lignes:[]}; lots.push(cur); return; }
+    if(!cur){ cur={numero:String(lots.length+1),designation:"LOT",lignes:[]}; lots.push(cur); }
+    const qn=parseFloat((qte||"").replace(/\s/g,"").replace(",","."));
+    cur.lignes.push({numero:n,designation:des,unite:u,quantite:isNaN(qn)?null:qn});
+  });
+  return lots;
+}
+
+/* ===================== CHARGEMENTS ===================== */
+async function loadEntreprise(){
+  const rows=await q(sb.from("membres").select("role,nom_affiche,entreprise_id,entreprises(*)").eq("user_id",S.user.id).limit(1));
+  if(rows.length){ S.ent=rows[0].entreprises; S.role=rows[0].role; S.nomAffiche=rows[0].nom_affiche||""; } else S.ent=null;
+}
+async function loadChantiers(){ S.chantiers=await q(sb.from("chantiers").select("*").order("created_at",{ascending:false})); }
+async function loadBiblio(){
+  S.fourn=await q(sb.from("fournisseurs").select("*").order("nom"));
+  S.produits=await q(sb.from("produits").select("*, fournisseurs(id,nom,email), pieces_requises(id,libelle,ordre, documents(id,nom_fichier,storage_path,date_validite,created_at))").order("nom"));
+  S.produits.forEach(p=>p.pieces_requises.sort((a,b)=>a.ordre-b.ordre));
+}
+async function loadChantierData(){
+  const id=S.ch.id;
+  S.lots=await q(sb.from("lots").select("*, lignes_devis(*)").eq("chantier_id",id).order("ordre"));
+  S.lots.forEach(l=>l.lignes_devis.sort((a,b)=>a.ordre-b.ordre));
+  S.rows=await q(sb.from("v_pieces_chantier").select("*").eq("chantier_id",id));
+  S.photos={};
+  if(S.lots.length){
+    const ph=await q(sb.from("photos").select("*").in("lot_id",S.lots.map(l=>l.id)).order("created_at"));
+    if(ph.length){
+      const {data}=await sb.storage.from("photos").createSignedUrls(ph.map(p=>p.storage_path),3600);
+      const urls={}; (data||[]).forEach(d=>urls[d.path]=d.signedUrl);
+      ph.forEach(p=>{ (S.photos[p.lot_id]=S.photos[p.lot_id]||[]).push({...p,url:urls[p.storage_path]}); });
+    }
+  }
+}
+
+/* ===================== RENDU ===================== */
+function render(){
+  const app=$("#app");
+  if(!S.user) return app.innerHTML=viewAuth();
+  if(!S.ent) return app.innerHTML=viewOnboard();
+  const head=`<header class="top"><div class="brand" data-act="home" role="link" tabindex="0">DOE Auto<small>${esc(S.ent.nom)}</small></div>
+    <nav class="mainnav"><button class="btn small ${S.view==="biblio"?"":"ghost"}" data-act="biblio">Bibliothèque</button>
+    <button class="btn small ${S.view!=="biblio"?"":"ghost"}" data-act="home">Chantiers</button>
+    <button class="btn small ghost" data-act="logout">Déconnexion</button></nav></header>`;
+  let body="";
+  if(S.view==="chantiers") body=viewChantiers();
+  else if(S.view==="chantier") body=viewChantier();
+  else if(S.view==="biblio") body=viewBiblio();
+  app.innerHTML=head+body;
+}
+
+function viewAuth(){
+  const signup=S.authMode==="signup";
+  return `<div class="narrow"><form class="box" data-form="auth">
+    <h1>DOE Auto</h1>
+    <div class="hint">${signup?"Crée ton compte. Un e-mail de confirmation peut t'être envoyé.":"Connecte-toi pour accéder à tes chantiers."}</div>
+    <label class="f">E-mail<input type="email" id="a-email" required autocomplete="email"></label>
+    <label class="f">Mot de passe<input type="password" id="a-pass" required minlength="8" autocomplete="${signup?"new-password":"current-password"}"></label>
+    <button class="btn" type="submit">${signup?"Créer mon compte":"Se connecter"}</button>
+    <button class="link" type="button" data-act="authmode">${signup?"J'ai déjà un compte":"Créer un compte"}</button>
+  </form></div>`;
+}
+
+function viewOnboard(){
+  return `<div class="narrow" style="max-width:560px"><form class="box" data-form="onboard">
+    <h1>Ton entreprise</h1>
+    <div class="hint">Ces informations apparaissent sur la page de garde du DOE et dans les attestations de pose.</div>
+    <div class="grid2">
+      <label class="f">Raison sociale<input type="text" id="o-nom" required></label>
+      <label class="f">SIRET<input type="text" id="o-siret"></label>
+      <label class="f">Adresse<input type="text" id="o-adr"></label>
+      <label class="f">Ville (pour « Fait à … »)<input type="text" id="o-ville"></label>
+    </div>
+    <label class="f">Ton nom et ta fonction (signataire)<input type="text" id="o-sign" placeholder="Prénom NOM, Président"></label>
+    <button class="btn" type="submit">Créer l'entreprise</button>
+    <button class="link" type="button" data-act="logout">Se déconnecter</button>
+  </form></div>`;
+}
+
+function viewChantiers(){
+  return `<section class="panel">
+    <div class="row between"><h1>Chantiers</h1><span class="badge">${S.chantiers.length}</span></div>
+    <details class="box" ${S.chantiers.length?"":"open"}><summary>Nouveau chantier</summary>
+      <form data-form="chantier" style="display:flex;flex-direction:column;gap:12px;margin-top:12px">
+        <div class="grid2">
+          <label class="f">Nom du chantier<input type="text" id="n-nom" required></label>
+          <label class="f">Adresse<input type="text" id="n-adr"></label>
+          <label class="f">Maître d'ouvrage<input type="text" id="n-moa"></label>
+          <label class="f">Maître d'œuvre<input type="text" id="n-moe"></label>
+          <label class="f">Date de réception<input type="date" id="n-date"></label>
+          <label class="f">Signataire<input type="text" id="n-sign" value="${esc(S.nomAffiche)}"></label>
+        </div>
+        <button class="btn" type="submit">Créer le chantier</button>
+      </form></details>
+    <div class="list">${S.chantiers.map(c=>`
+      <button class="card" data-act="open" data-id="${c.id}">
+        <div style="min-width:0"><div style="font-weight:600">${esc(c.nom)}</div><div class="meta">${esc(c.adresse||"Adresse non renseignée")}</div></div>
+        <span class="badge">${c.statut==="en_cours"?"réception "+frDate(c.date_reception):esc(c.statut.replace("_"," "))}</span>
+      </button>`).join("") || `<div class="empty">Aucun chantier pour l'instant.</div>`}</div>
+  </section>`;
+}
+
+function viewChantier(){
+  const c=S.ch, t=S.tab;
+  const tabs=[["devis","Devis"],["pieces","Pièces"],["relances","Relances"],["doe","DOE"]];
+  let inner = t==="devis"?tabDevis(): t==="pieces"?tabPieces(): t==="relances"?tabRelances(): tabDOE();
+  return `<div class="row between" style="padding-top:6px"><div style="min-width:0"><button class="link" data-act="home">← Chantiers</button><h1>${esc(c.nom)}</h1></div></div>
+    <nav class="tabs" role="tablist">${tabs.map(([k,l])=>`<button role="tab" aria-selected="${t===k}" data-act="tab" data-tab="${k}">${l}${k==="pieces"?" · "+stats().pct+" %":""}</button>`).join("")}</nav>
+    <section class="panel">${inner}</section>`;
+}
+
+/* ---- Onglet Devis ---- */
+function tabDevis(){
+  if(!S.lots.length) return `<div class="box">
+      <h2>Import du devis</h2>
+      <div class="hint">Colle tes lignes depuis Excel ou Obat : N° · Désignation · Unité · Quantité (tabulation ou point-virgule). Une ligne sans unité = titre de lot.</div>
+      ${S.produits.length?"":`<div class="confirm" style="background:var(--warn-soft)">Ta bibliothèque est vide : aucun produit ne sera reconnu. <button class="link" data-act="biblio">Ouvrir la bibliothèque</button></div>`}
+      <textarea id="devis" spellcheck="false" placeholder="1;PLÂTRERIE;;&#10;1.1;Cloison 72/48 BA13;m²;84"></textarea>
+      <div class="row"><button class="btn" data-act="import">Importer le devis</button><button class="btn ghost" data-act="exemple">Coller l'exemple</button></div>
+    </div>`;
+  const nb=S.lots.reduce((a,l)=>a+l.lignes_devis.length,0), ok=S.lots.reduce((a,l)=>a+l.lignes_devis.filter(x=>x.produit_id).length,0);
+  return `<div class="box"><div class="row between"><h2>Devis importé</h2><span class="badge">${ok}/${nb} lignes reliées</span></div>
+      <div class="hint">Associe un produit aux lignes non reconnues pour que leurs pièces apparaissent.</div>
+      ${S.confirmReplace?`<div class="confirm">Remplacer le devis supprime les lots, lignes et photos de ce chantier. Les documents de la bibliothèque sont conservés.
+        <div class="row"><button class="btn danger small" data-act="replace-yes">Supprimer et réimporter</button><button class="btn ghost small" data-act="replace-no">Annuler</button></div></div>`
+        :`<div class="row"><button class="btn ghost small" data-act="replace">Remplacer le devis</button></div>`}
+    </div>
+    ${S.lots.map(l=>`<article class="lot"><header><h3><span class="num">${esc(l.numero)}</span>${esc(l.designation)}</h3></header>
+      ${l.lignes_devis.map(li=>`<div class="item">
+        <div class="t"><div><span class="num">${esc(li.numero)}</span>${esc(li.designation)}</div><span class="qty">${li.quantite??""} ${esc(li.unite||"")}</span></div>
+        <label class="f">Produit<select data-ligne="${li.id}" id="sel-${li.id}"><option value="">— Aucun produit —</option>${S.produits.map(p=>`<option value="${p.id}" ${p.id===li.produit_id?"selected":""}>${esc(p.nom)}</option>`).join("")}</select></label>
+      </div>`).join("")}</article>`).join("")}`;
+}
+
+/* ---- Statistiques ---- */
+function stats(){
+  const p=S.rows.filter(r=>r.piece_requise_id); const c={en_bibliotheque:0,expiree:0,demandee:0,manquante:0};
+  p.forEach(r=>c[r.statut]++);
+  const photoLots=S.lots.filter(l=>(S.photos[l.id]||[]).length).length;
+  const total=p.length+S.lots.length;
+  return {...c,photoLots,total:p.length,pct: total?Math.round((c.en_bibliotheque+photoLots)/total*100):0};
+}
+function rowsByLigne(){ const m={}; S.rows.forEach(r=>{ (m[r.ligne_id]=m[r.ligne_id]||[]).push(r); }); return m; }
+
+/* ---- Onglet Pièces ---- */
+function tabPieces(){
+  if(!S.lots.length) return `<div class="box empty">Importe d'abord le devis dans l'onglet Devis.</div>`;
+  const s=stats(), byL=rowsByLigne();
+  return `<div class="box">
+      <div class="row between"><h2>Pièces du DOE</h2><span class="mono">${s.pct} % prêt</span></div>
+      <div class="bar"><i style="width:${s.pct}%"></i></div>
+      <div class="stats"><span><b>${s.en_bibliotheque}</b> jointes</span><span><b>${s.demandee}</b> demandées</span><span><b>${s.manquante+s.expiree}</b> manquantes ou expirées</span><span><b>${s.photoLots}/${S.lots.length}</b> lots photographiés</span></div>
+      <div class="hint">Un PDF ajouté ici entre dans la bibliothèque et sera repris sur tous tes prochains chantiers.</div>
+    </div>
+    ${S.lots.map(l=>`<article class="lot">
+      <header><h3><span class="num">${esc(l.numero)}</span>${esc(l.designation)}</h3>
+        <div class="photos">${(S.photos[l.id]||[]).map(p=>`<img src="${esc(p.url||"")}" alt="Photo du lot ${esc(l.numero)}" loading="lazy">`).join("")}
+          <label class="up" for="ph-${l.id}">+ Photos<input type="file" id="ph-${l.id}" accept="image/*" multiple data-lotphoto="${l.id}"></label></div>
+      </header>
+      ${l.lignes_devis.map(li=>{ const rs=(byL[li.id]||[]).filter(r=>r.piece_requise_id); const r0=(byL[li.id]||[])[0]; return `<div class="item">
+        <div class="t"><div><span class="num">${esc(li.numero)}</span>${esc(li.designation)}</div><span class="qty">${li.quantite??""} ${esc(li.unite||"")}</span></div>
+        ${li.produit_id&&r0?`<div class="prod">→ ${esc(r0.produit_nom)}${r0.dtu?` · <span class="mono">${esc(r0.dtu)}</span>`:""}${r0.fournisseur_nom?` · ${esc(r0.fournisseur_nom)}`:""}</div>
+          <div class="chips">${rs.map(r=> r.statut==="en_bibliotheque"
+            ? `<button class="chip ok" data-act="opendoc" data-path="${esc(r.storage_path)}" title="Ouvrir le document">${esc(r.piece_libelle)}</button>`
+            : `<span class="chip ${CLS[r.statut]}">${esc(r.piece_libelle)} · ${LBL[r.statut]}</span><label class="up" for="up-${li.id}-${r.piece_requise_id}">+ PDF<input type="file" id="up-${li.id}-${r.piece_requise_id}" accept=".pdf,image/*" data-piece="${r.piece_requise_id}" data-produit="${r.produit_id}"></label>`).join("") || `<span class="hint">Aucune pièce définie pour ce produit.</span>`}</div>`
+          :`<div class="hint">Aucun produit associé. <button class="link" data-act="tab" data-tab="devis">Associer dans l'onglet Devis</button></div>`}
+      </div>`;}).join("")}
+    </article>`).join("")}`;
+}
+
+/* ---- Onglet Relances ---- */
+function manquantesParFournisseur(){
+  const out={}, vus=new Set();
+  S.rows.forEach(r=>{ if(!r.piece_requise_id || r.statut==="en_bibliotheque") return;
+    if(vus.has(r.piece_requise_id)) return; vus.add(r.piece_requise_id);
+    const k=r.fournisseur_id||"aucun"; (out[k]=out[k]||{id:r.fournisseur_id,nom:r.fournisseur_nom||"Fournisseur non renseigné",pieces:[]}).pieces.push(r); });
+  return Object.values(out);
+}
+function mailFournisseur(g){
+  const c=S.ch, e=S.ent;
+  const objet=`Documents DOE — ${c.nom}`;
+  const corps=`Bonjour,
+
+Dans le cadre du Dossier des Ouvrages Exécutés du chantier ${c.nom}${c.adresse?" ("+c.adresse+")":""}${c.date_reception?", réception prévue le "+frDate(c.date_reception):""}, pourriez-vous nous transmettre les documents suivants :
+
+${g.pieces.map(p=>`- ${p.produit_nom} : ${p.piece_libelle}`).join("\n")}
+
+Merci de nous les envoyer au format PDF${c.date_reception?" avant le "+frDate(c.date_reception):" dès que possible"}.
+
+Cordialement,
+${c.signataire||S.nomAffiche||""}
+${e.nom}${e.adresse?" — "+e.adresse:""}`;
+  return {objet,corps};
+}
+function tabRelances(){
+  if(!S.lots.length) return `<div class="box empty">Importe d'abord le devis dans l'onglet Devis.</div>`;
+  const gs=manquantesParFournisseur();
+  const sansProduit=S.lots.flatMap(l=>l.lignes_devis.filter(x=>!x.produit_id));
+  return `<div class="box"><h2>Relances fournisseurs</h2>
+      <div class="hint">Un mail par fournisseur, avec uniquement les pièces qui manquent. L'adresse saisie est enregistrée pour les prochains chantiers.</div>
+      ${sansProduit.length?`<div class="hint">${sansProduit.length} ligne(s) sans produit associé ne sont pas comptées. <button class="link" data-act="tab" data-tab="devis">Les associer</button></div>`:""}
+    </div>
+    ${gs.length? gs.map((g,i)=>{ const m=mailFournisseur(g); const f=S.fourn.find(x=>x.id===g.id); const email=f?.email||""; const toutes=g.pieces.every(p=>p.statut==="demandee"); return `
+      <article class="box">
+        <div class="row between"><h2 style="font-size:16px">${esc(g.nom)}</h2><span class="badge">${g.pieces.length} pièce${g.pieces.length>1?"s":""}${toutes?" · relancé":""}</span></div>
+        ${g.id?`<label class="f">E-mail du fournisseur<input type="email" id="fm-${g.id}" data-fournmail="${g.id}" value="${esc(email)}" placeholder="contact@fournisseur.fr"></label>`:`<div class="hint">Renseigne le fournisseur de ces produits dans la bibliothèque.</div>`}
+        <label class="f">Objet<input type="text" id="obj-${i}" value="${esc(m.objet)}"></label>
+        <textarea class="mail" id="txt-${i}" spellcheck="false">${esc(m.corps)}</textarea>
+        <div class="row">
+          ${email?`<a class="btn" id="mailto-${i}" href="mailto:${esc(email)}?subject=${encodeURIComponent(m.objet)}&body=${encodeURIComponent(m.corps)}">Ouvrir dans ma messagerie</a>`:""}
+          <button class="btn ${email?"ghost":""}" data-act="copymail" data-i="${i}">Copier le mail</button>
+          ${g.id?`<button class="btn ghost" data-act="sent" data-i="${i}">Marquer comme envoyé</button>`:""}
+        </div>
+      </article>`;}).join("")
+    : `<div class="box empty">Aucune pièce à relancer.</div>`}`;
+}
+
+/* ---- Onglet DOE ---- */
+function tabDOE(){
+  const c=S.ch, e=S.ent, s=stats(), byL=rowsByLigne();
+  const toc=S.lots.map(l=>{
+    const ph=(S.photos[l.id]||[]).length;
+    const docs=l.lignes_devis.flatMap(li=>(byL[li.id]||[]).filter(r=>r.piece_requise_id).map(r=>`<li><span class="lbl">${esc(li.numero)} ${esc(r.produit_nom)} — ${esc(r.piece_libelle)}</span><span class="dots"></span><span class="st ${CLS[r.statut]}">${LBL[r.statut]}</span></li>`)).join("");
+    return `<li class="sec"><span class="num">${esc(l.numero)}</span><span class="lbl">${esc(l.designation)}</span><span class="dots"></span><span class="st ${ph?"ok":"warn"}">${ph?ph+" photo"+(ph>1?"s":""):"photos à faire"}</span></li>${docs}
+      <li><span class="lbl">${esc(l.numero)}.A Attestation de pose</span><span class="dots"></span><span class="st ok">générée</span></li>`;
+  }).join("");
+  const atts=S.lots.map(l=>{
+    const dtus=[...new Set(l.lignes_devis.flatMap(li=>(byL[li.id]||[]).map(r=>r.dtu)).filter(Boolean))];
+    return `<div class="att"><h4><span class="num">${esc(l.numero)}.A</span>Attestation de pose — ${esc(l.designation)}</h4>
+      <p>Je soussigné ${esc(c.signataire||S.nomAffiche||"……")}, représentant la société ${esc(e.nom)}, atteste que les ouvrages du lot « ${esc(l.designation)} » réalisés sur le chantier ${esc(c.nom)}${c.adresse?", "+esc(c.adresse):""}, ont été mis en œuvre conformément aux règles de l'art${dtus.length?", aux "+esc(dtus.join(", ")):""} et aux prescriptions des fabricants des produits listés au présent dossier.</p>
+      <div class="sign"><span>Fait à ${esc(e.ville||"……")}, le ${frDate(c.date_reception)}</span><span>Signature et cachet</span></div></div>`;
+  }).join("");
+  return `<div class="row between"><h2>Aperçu du DOE</h2><button class="btn" data-act="print">Imprimer / PDF</button></div>
+    <div class="hint">« Imprimer / PDF » produit la page de garde, le sommaire et les attestations. La fusion automatique des fiches techniques en un seul PDF viendra dans une prochaine version.</div>
+    <div class="sheet" id="sheet">
+      <div class="cover">
+        <div class="kicker">Dossier des Ouvrages Exécutés</div>
+        <div class="ttl">${esc(c.nom)}</div>
+        <dl><dt>Adresse</dt><dd>${esc(c.adresse||"—")}</dd><dt>Maître d'ouvrage</dt><dd>${esc(c.maitre_ouvrage||"—")}</dd><dt>Maître d'œuvre</dt><dd>${esc(c.maitre_oeuvre||"—")}</dd>
+        <dt>Entreprise</dt><dd>${esc(e.nom)}${e.adresse?" — "+esc(e.adresse):""}</dd>${e.siret?`<dt>SIRET</dt><dd class="mono">${esc(e.siret)}</dd>`:""}<dt>Réception</dt><dd>${frDate(c.date_reception)}</dd><dt>Complétude</dt><dd class="mono">${s.pct} %</dd></dl>
+      </div>
+      <h2>Sommaire</h2><ul class="toc">${toc||"<li>Aucun lot.</li>"}</ul>
+      ${atts}
+    </div>`;
+}
+
+/* ---- Bibliothèque ---- */
+function viewBiblio(){
+  const nbDocs=S.produits.reduce((a,p)=>a+p.pieces_requises.reduce((b,r)=>b+r.documents.length,0),0);
+  return `<section class="panel">
+    <div class="row between"><h1>Bibliothèque produits</h1><span class="badge">${S.produits.length} produits · ${nbDocs} documents</span></div>
+    ${S.produits.length?"":`<div class="box"><h2>Démarrer</h2><div class="hint">Charge 9 produits courants (plâtrerie, peinture, sols, menuiserie) avec leurs pièces exigées et leurs mots-clés. Tu ajoutes ensuite tes PDF.</div><div class="row"><button class="btn" data-act="seed">Charger la bibliothèque de départ</button></div></div>`}
+    <details class="box"><summary>Ajouter un produit</summary>
+      <form data-form="produit" style="display:flex;flex-direction:column;gap:12px;margin-top:12px">
+        <div class="grid2">
+          <label class="f">Nom du produit<input type="text" id="p-nom" required></label>
+          <label class="f">DTU<input type="text" id="p-dtu" placeholder="DTU 25.41"></label>
+          <label class="f">Fournisseur<input type="text" id="p-four" list="dl-four" placeholder="Nom du fournisseur"></label>
+          <label class="f">Mots-clés du devis (séparés par des virgules)<input type="text" id="p-mots" placeholder="cloison, ba13"></label>
+        </div>
+        <datalist id="dl-four">${S.fourn.map(f=>`<option value="${esc(f.nom)}">`).join("")}</datalist>
+        <label class="f">Pièces exigées (séparées par des virgules)<input type="text" id="p-pieces" value="Fiche technique"></label>
+        <button class="btn" type="submit">Ajouter le produit</button>
+      </form></details>
+    <div class="list">${S.produits.map(p=>`<article class="lot">
+      <header><h3 style="min-width:0">${esc(p.nom)}</h3><span class="badge">${esc(p.dtu||"sans DTU")}${p.fournisseurs?" · "+esc(p.fournisseurs.nom):""}</span></header>
+      <div class="item"><div class="prod">Mots-clés : <span class="mono">${esc((p.mots_cles||[]).join(", ")||"—")}</span></div></div>
+      ${p.pieces_requises.map(r=>{ const d=r.documents.slice().sort((a,b)=>b.created_at.localeCompare(a.created_at))[0]; return `<div class="item"><div class="row between">
+        <div style="min-width:0"><div>${esc(r.libelle)}</div><div class="hint mono" style="overflow-wrap:anywhere">${d?esc(d.nom_fichier)+" · "+new Date(d.created_at).toLocaleDateString("fr-FR"):"Aucun document"}</div></div>
+        <div class="chips">${d?`<button class="chip ok" data-act="opendoc" data-path="${esc(d.storage_path)}">Ouvrir</button>`:""}
+          <label class="up" for="lib-${r.id}">${d?"Remplacer":"+ Ajouter le PDF"}<input type="file" id="lib-${r.id}" accept=".pdf,image/*" data-piece="${r.id}" data-produit="${p.id}"></label></div>
+      </div></div>`;}).join("")}
+    </article>`).join("")}</div>
+  </section>`;
+}
+
+/* ===================== ACTIONS ===================== */
+async function goHome(){ S.view="chantiers"; S.ch=null; await loadChantiers(); render(); }
+async function openChantier(id){
+  S.ch=S.chantiers.find(c=>c.id===id); S.view="chantier"; S.confirmReplace=false;
+  $("#app").innerHTML=`<div class="loading">Chargement du chantier…</div>`;
+  await loadBiblio(); await loadChantierData();
+  S.tab=S.lots.length?"pieces":"devis"; render(); window.scrollTo({top:0});
+}
+async function refreshChantier(){ await loadBiblio(); await loadChantierData(); render(); }
+
+async function importDevis(){
+  const lots=parseDevis($("#devis").value);
+  if(!lots.length) return toast("Aucune ligne reconnue. Vérifie le format.");
+  const ent=S.ent.id, ch=S.ch.id; let n=0, m=0;
+  for(let i=0;i<lots.length;i++){
+    const L=lots[i];
+    const [lot]=await q(sb.from("lots").insert({entreprise_id:ent,chantier_id:ch,numero:L.numero,designation:L.designation,ordre:i}).select());
+    if(L.lignes.length){
+      const rows=L.lignes.map((x,j)=>{ const p=matchProduit(x.designation); if(p) m++; n++;
+        return {entreprise_id:ent,lot_id:lot.id,numero:x.numero,designation:x.designation,unite:x.unite,quantite:x.quantite,produit_id:p?p.id:null,ordre:j}; });
+      await q(sb.from("lignes_devis").insert(rows));
+    }
+  }
+  toast(`${lots.length} lots, ${n} lignes importées, ${m} produits reconnus`);
+  await loadChantierData(); S.tab="pieces"; render();
+}
+
+async function replaceDevis(){
+  const ids=S.lots.map(l=>l.id);
+  const ph=Object.values(S.photos).flat().map(p=>p.storage_path);
+  if(ph.length) await sb.storage.from("photos").remove(ph);
+  if(ids.length) await q(sb.from("lots").delete().in("id",ids));
+  S.confirmReplace=false; await loadChantierData(); S.tab="devis"; render(); toast("Devis supprimé : tu peux réimporter");
+}
+
+async function uploadDoc(input){
+  const f=input.files[0]; if(!f) return;
+  const path=`${S.ent.id}/produits/${input.dataset.produit}/${Date.now()}-${safeName(f.name)}`;
+  toast("Envoi du document…");
+  const {error}=await sb.storage.from("documents").upload(path,f,{contentType:f.type||"application/pdf"});
+  if(error){ toast(messageErreur(error)); return; }
+  await q(sb.from("documents").insert({entreprise_id:S.ent.id,piece_requise_id:input.dataset.piece,storage_path:path,nom_fichier:f.name,source:"upload"}));
+  toast("Ajouté à la bibliothèque");
+  if(S.view==="chantier") await refreshChantier(); else { await loadBiblio(); render(); }
+}
+
+async function uploadPhotos(input){
+  const lot=input.dataset.lotphoto, files=[...input.files]; if(!files.length) return;
+  toast(`Envoi de ${files.length} photo(s)…`);
+  for(const f of files){
+    const path=`${S.ent.id}/chantiers/${S.ch.id}/${lot}/${Date.now()}-${safeName(f.name)}`;
+    const {error}=await sb.storage.from("photos").upload(path,f,{contentType:f.type||"image/jpeg"});
+    if(error){ toast(messageErreur(error)); return; }
+    await q(sb.from("photos").insert({entreprise_id:S.ent.id,lot_id:lot,storage_path:path,prise_le:new Date(f.lastModified||Date.now()).toISOString()}));
+  }
+  await loadChantierData(); render(); toast("Photos ajoutées");
+}
+
+async function openDoc(path){
+  const w=window.open("","_blank");
+  const {data,error}=await sb.storage.from("documents").createSignedUrl(path,600);
+  if(error){ if(w) w.close(); toast(messageErreur(error)); return; }
+  if(w) w.location=data.signedUrl; else location.href=data.signedUrl;
+}
+
+async function markSent(i){
+  const g=manquantesParFournisseur()[i]; if(!g||!g.id) return;
+  const f=S.fourn.find(x=>x.id===g.id);
+  const [rel]=await q(sb.from("relances").insert({entreprise_id:S.ent.id,chantier_id:S.ch.id,fournisseur_id:g.id,email_destinataire:f?.email||null,
+    objet:$("#obj-"+i).value,corps:$("#txt-"+i).value,statut:"envoyee",envoyee_le:new Date().toISOString()}).select());
+  await q(sb.from("relance_pieces").insert(g.pieces.map(p=>({relance_id:rel.id,piece_requise_id:p.piece_requise_id,entreprise_id:S.ent.id}))));
+  await loadChantierData(); render(); toast("Relance enregistrée");
+}
+
+async function copyMail(i){
+  const txt="Objet : "+$("#obj-"+i).value+"\n\n"+$("#txt-"+i).value;
+  try{ await navigator.clipboard.writeText(txt); toast("Mail copié"); }
+  catch(e){ const t=$("#txt-"+i); t.focus(); t.select(); toast("Texte sélectionné : copie-le"); }
+}
+
+async function fournisseurId(nom){
+  nom=(nom||"").trim(); if(!nom) return null;
+  const ex=S.fourn.find(f=>norm(f.nom)===norm(nom)); if(ex) return ex.id;
+  const [f]=await q(sb.from("fournisseurs").insert({entreprise_id:S.ent.id,nom}).select()); S.fourn.push(f); return f.id;
+}
+async function creerProduit({nom,dtu,four,mots,pieces}){
+  const fid=await fournisseurId(four);
+  const [p]=await q(sb.from("produits").insert({entreprise_id:S.ent.id,nom,dtu:dtu||null,fournisseur_id:fid,mots_cles:mots}).select());
+  if(pieces.length) await q(sb.from("pieces_requises").insert(pieces.map((l,i)=>({entreprise_id:S.ent.id,produit_id:p.id,libelle:l,ordre:i}))));
+}
+async function seedBiblio(){
+  toast("Chargement de la bibliothèque…");
+  for(const x of LIB_DEPART) await creerProduit({nom:x.nom,dtu:x.dtu,four:x.f,mots:x.mots,pieces:x.pieces});
+  await loadBiblio(); render(); toast("9 produits ajoutés");
+}
+
+/* ===================== ÉVÉNEMENTS ===================== */
+document.addEventListener("click",async e=>{
+  const b=e.target.closest("[data-act]"); if(!b) return;
+  const a=b.dataset.act;
+  try{
+    if(a==="home") await goHome();
+    else if(a==="biblio"){ S.view="biblio"; await loadBiblio(); render(); }
+    else if(a==="logout"){ await sb.auth.signOut(); }
+    else if(a==="authmode"){ S.authMode=S.authMode==="login"?"signup":"login"; render(); }
+    else if(a==="open") await openChantier(b.dataset.id);
+    else if(a==="tab"){ S.tab=b.dataset.tab; render(); window.scrollTo({top:0}); }
+    else if(a==="exemple"){ $("#devis").value=EXEMPLE_DEVIS; }
+    else if(a==="import") await busy(b,importDevis);
+    else if(a==="replace"){ S.confirmReplace=true; render(); }
+    else if(a==="replace-no"){ S.confirmReplace=false; render(); }
+    else if(a==="replace-yes") await busy(b,replaceDevis);
+    else if(a==="opendoc") await openDoc(b.dataset.path);
+    else if(a==="copymail") await copyMail(+b.dataset.i);
+    else if(a==="sent") await busy(b,()=>markSent(+b.dataset.i));
+    else if(a==="seed") await busy(b,seedBiblio);
+    else if(a==="print") window.print();
+  }catch(err){}
+});
+document.addEventListener("keydown",e=>{ if(e.key==="Enter" && e.target.matches('[role="link"][data-act]')) e.target.click(); });
+
+document.addEventListener("change",async e=>{
+  const t=e.target;
+  try{
+    if(t.matches("input[type=file][data-piece]")) await uploadDoc(t);
+    else if(t.matches("input[type=file][data-lotphoto]")) await uploadPhotos(t);
+    else if(t.matches("select[data-ligne]")){
+      await q(sb.from("lignes_devis").update({produit_id:t.value||null}).eq("id",t.dataset.ligne));
+      await loadChantierData(); render(); toast("Ligne mise à jour");
+    }
+    else if(t.matches("input[data-fournmail]")){
+      await q(sb.from("fournisseurs").update({email:t.value.trim()||null}).eq("id",t.dataset.fournmail));
+      await loadBiblio(); render(); toast("E-mail enregistré");
+    }
+  }catch(err){}
+});
+
+document.addEventListener("submit",async e=>{
+  const f=e.target.closest("[data-form]"); if(!f) return; e.preventDefault();
+  const btn=f.querySelector("button[type=submit]");
+  await busy(btn,async()=>{
+    const k=f.dataset.form;
+    if(k==="auth"){
+      const email=$("#a-email").value.trim(), password=$("#a-pass").value;
+      if(S.authMode==="signup"){
+        const {data,error}=await sb.auth.signUp({email,password,options:{emailRedirectTo:location.origin+location.pathname}});
+        if(error) return toast(messageErreur(error));
+        if(!data.session) toast("Compte créé : clique sur le lien reçu par e-mail, puis connecte-toi.");
+      } else {
+        const {error}=await sb.auth.signInWithPassword({email,password});
+        if(error) return toast(messageErreur(error));
+      }
+    }
+    if(k==="onboard"){
+      await q(sb.rpc("creer_entreprise",{p_nom:$("#o-nom").value.trim(),p_siret:$("#o-siret").value.trim()||null,p_adresse:$("#o-adr").value.trim()||null,p_ville:$("#o-ville").value.trim()||null}));
+      const sign=$("#o-sign").value.trim();
+      await loadEntreprise();
+      if(sign){ await q(sb.from("membres").update({nom_affiche:sign}).eq("entreprise_id",S.ent.id).eq("user_id",S.user.id)); S.nomAffiche=sign; }
+      await goHome(); toast("Entreprise créée");
+    }
+    if(k==="chantier"){
+      const [c]=await q(sb.from("chantiers").insert({entreprise_id:S.ent.id,nom:$("#n-nom").value.trim(),adresse:$("#n-adr").value.trim()||null,
+        maitre_ouvrage:$("#n-moa").value.trim()||null,maitre_oeuvre:$("#n-moe").value.trim()||null,date_reception:$("#n-date").value||null,signataire:$("#n-sign").value.trim()||null}).select());
+      S.chantiers.unshift(c); await openChantier(c.id);
+    }
+    if(k==="produit"){
+      const split=v=>v.split(",").map(x=>x.trim()).filter(Boolean);
+      await creerProduit({nom:$("#p-nom").value.trim(),dtu:$("#p-dtu").value.trim(),four:$("#p-four").value,mots:split($("#p-mots").value).map(norm),pieces:split($("#p-pieces").value)});
+      await loadBiblio(); render(); toast("Produit ajouté");
+    }
+  });
+});
+
+/* ===================== DÉMARRAGE ===================== */
+async function onSession(session){
+  S.user=session?.user||null;
+  if(!S.user){ S.ent=null; render(); return; }
+  try{ await loadEntreprise(); if(S.ent) await goHome(); else render(); }
+  catch(e){ $("#app").innerHTML=`<div class="narrow box"><h2>Connexion à la base impossible</h2><div class="err">${esc(messageErreur(e))}</div><button class="btn ghost" data-act="logout">Se déconnecter</button></div>`; }
+}
+let lastUid;
+sb.auth.onAuthStateChange((ev,session)=>{
+  const uid=session?.user?.id||null;
+  if(ev==="TOKEN_REFRESHED" || (ev==="SIGNED_IN" && uid===lastUid)) return;
+  lastUid=uid; onSession(session);
+});
+</script>
+</body>
+</html>
