@@ -39,6 +39,7 @@ h2{font-family:var(--f-display);font-weight:600;font-size:18px;margin:0;text-wra
 .narrow{max-width:420px;margin:40px auto 0}
 .grid2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
 @media (max-width:560px){.grid2{grid-template-columns:1fr}}
+.grid3{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px}
 label.f{display:flex;flex-direction:column;gap:4px;font-size:12px;color:var(--muted);font-weight:500;letter-spacing:.02em}
 input[type=text],input[type=email],input[type=password],input[type=date],textarea,select{font:inherit;font-size:14px;color:var(--ink);background:var(--paper);border:1px solid var(--line);border-radius:6px;padding:8px 10px;width:100%;min-width:0}
 textarea{font-family:var(--f-mono);font-size:12.5px;min-height:170px;resize:vertical;white-space:pre;overflow-x:auto}
@@ -119,6 +120,27 @@ details summary{cursor:pointer;font-weight:600;color:var(--accent)}
 .attp .sigbox{height:70px;border:1px dashed #888;margin-top:4px}
 .attp .foot{font-size:10px;color:#666;text-align:right}
 .attp .desc{white-space:pre-line}
+/* Page de garde (aperçu écran) */
+.cover .clogo{max-height:56px;max-width:200px;object-fit:contain;align-self:flex-start}
+.cover .cphoto{width:100%;aspect-ratio:16/9;object-fit:cover;border-radius:4px;border:1px solid var(--line);max-width:100%}
+.cover .csoc{font-size:12px;color:var(--muted);border-top:1px solid var(--line);padding-top:8px;display:flex;flex-direction:column;gap:2px}
+.pickph{display:flex;gap:6px;flex-wrap:wrap}
+.pickph button{padding:0;border:2px solid transparent;border-radius:6px;background:none;cursor:pointer}
+.pickph button[aria-pressed="true"]{border-color:var(--accent)}
+.pickph img{width:64px;height:48px;object-fit:cover;border-radius:4px;display:block}
+.logo-prev{max-height:70px;max-width:220px;object-fit:contain;background:#fff;border:1px solid var(--line);border-radius:6px;padding:6px}
+/* Prix d'achat */
+.ptable{width:100%;border-collapse:collapse;font-size:13.5px}
+.ptable th{text-align:left;font-size:11.5px;font-weight:600;letter-spacing:.04em;text-transform:uppercase;color:var(--muted);padding:8px;border-bottom:1px solid var(--line);white-space:nowrap}
+.ptable td{padding:6px 8px;border-bottom:1px solid var(--line);vertical-align:middle}
+.ptable tr.grp td{background:var(--accent-soft);color:var(--accent);font-family:var(--f-display);font-weight:600;font-size:13px;letter-spacing:.04em;text-transform:uppercase}
+.ptable .n{font-family:var(--f-mono);font-variant-numeric:tabular-nums;text-align:right;white-space:nowrap}
+.ptable input.pcell{font:inherit;font-family:var(--f-mono);font-size:13px;width:92px;text-align:right;padding:5px 7px;background:var(--ok-soft);color:var(--ok);border:1px solid transparent;border-radius:5px}
+.ptable input.pcell.vide{background:var(--paper);color:var(--muted);border-color:var(--line)}
+.ptable select{font-size:12.5px;padding:4px 6px;max-width:220px}
+.ptable .m{font-size:12px;color:var(--muted)}
+.tscroll{overflow-x:auto;background:var(--surface);border:1px solid var(--line);border-radius:10px}
+.cout{font-family:var(--f-mono);font-size:12.5px;color:var(--ok)}
 .bulk-log{font-family:var(--f-mono);font-size:12px;max-height:220px;overflow:auto;background:var(--paper);border:1px solid var(--line);border-radius:6px;padding:8px;white-space:pre-wrap}
 @media print{
   :root{--bg:#fff;--surface:#fff;--ink:#000;--muted:#444;--line:#bbb;--paper:#fff;--accent:#1d4ed8;color-scheme:light}
@@ -178,7 +200,8 @@ const CLS = {en_bibliotheque:"ok", expiree:"bad", demandee:"warn", manquante:"ba
 
 /* ===================== ÉTAT ===================== */
 const S = { user:null, ent:null, role:null, nomAffiche:"", view:"chantiers", tab:"pieces",
-  chantiers:[], ch:null, lots:[], rows:[], photos:{}, produits:[], fourn:[], confirmReplace:false, authMode:"login" };
+  chantiers:[], ch:null, lots:[], rows:[], photos:{}, produits:[], fourn:[], confirmReplace:false, authMode:"login",
+  prix:[], prixErr:null, prixQ:"", prixFam:"", prixDel:null, logo:null, coverUrl:null };
 
 /* ===================== OUTILS ===================== */
 const $ = s=>document.querySelector(s);
@@ -237,6 +260,23 @@ function infosSociete(e){
   const l5=[e.assurance&&"Garantie décennale : "+e.assurance, e.qualifications].filter(Boolean).join(" – ");
   return [l1,l2,l3,l4,l5].filter(Boolean);
 }
+/* Prix d'achat (table prix_achat, créée par maj-prix-entreprise.sql) */
+const FAMILLES=["Plâtrerie / isolation","Faux-plafonds","Sols","Peinture / résine","Menuiserie / quincaillerie","Divers"];
+async function loadPrix(){
+  const {data,error}=await sb.from("prix_achat").select("*").order("designation");
+  if(error){ S.prix=[]; S.prixErr=/does not exist|schema cache|relation/i.test(error.message)?"manque":messageErreur(error); return; }
+  S.prix=data; S.prixErr=null;
+}
+const prixDe = pid=> pid ? S.prix.filter(x=>x.produit_id===pid && x.prix_ht!=null).sort((a,b)=>String(b.date_prix||"").localeCompare(String(a.date_prix||"")))[0]||null : null;
+const normU = u=>norm(u).replace("m2","m²").replace(/^(u|un|unite|pce|piece|pi)$/,"u").replace(/^(m|ml|metre lineaire)$/,"ml").trim();
+const eur2 = v=> v==null||isNaN(v) ? "—" : Number(v).toLocaleString("fr-FR",{minimumFractionDigits:2,maximumFractionDigits:2})+" €";
+const coef = ()=> Number(S.ent?.coef_vente)||1.35;
+/* Coût d'une ligne : seulement si l'unité du devis correspond à l'unité du prix */
+function coutLigne(li){
+  const p=prixDe(li.produit_id); if(!p) return null;
+  const ok = li.quantite!=null && normU(li.unite)===normU(p.unite);
+  return {p, total: ok ? li.quantite*Number(p.prix_ht) : null};
+}
 async function loadChantiers(){ S.chantiers=await q(sb.from("chantiers").select("*").order("created_at",{ascending:false})); }
 async function loadBiblio(){
   S.fourn=await q(sb.from("fournisseurs").select("*").order("nom"));
@@ -269,6 +309,7 @@ function render(){
   const head=`<header class="top"><div class="brand" data-act="home" role="link" tabindex="0">DOE Auto<small>${esc(S.ent.nom)}</small></div>
     <nav class="mainnav"><button class="btn small ${S.view==="biblio"?"":"ghost"}" data-act="biblio">Bibliothèque</button>
     <button class="btn small ${S.view==="chantiers"||S.view==="chantier"?"":"ghost"}" data-act="home">Chantiers</button>
+    <button class="btn small ${S.view==="prix"?"":"ghost"}" data-act="prix">Prix</button>
     <button class="btn small ${S.view==="entreprise"?"":"ghost"}" data-act="entreprise">Entreprise</button>
     <button class="btn small ghost" data-act="logout">Déconnexion</button></nav></header>`;
   let body="";
@@ -276,6 +317,7 @@ function render(){
   else if(S.view==="chantier") body=viewChantier();
   else if(S.view==="biblio") body=viewBiblio();
   else if(S.view==="entreprise") body=viewEntreprise();
+  else if(S.view==="prix") body=viewPrix();
   app.innerHTML=head+body;
 }
 
@@ -349,8 +391,12 @@ function tabDevis(){
       <div class="row"><button class="btn" data-act="import">Importer le devis</button><button class="btn ghost" data-act="exemple">Coller l'exemple</button></div>
     </div>`;
   const nb=S.lots.reduce((a,l)=>a+l.lignes_devis.length,0), ok=S.lots.reduce((a,l)=>a+l.lignes_devis.filter(x=>x.produit_id).length,0);
+  const couts=S.lots.flatMap(l=>l.lignes_devis.map(coutLigne)).filter(Boolean);
+  const totMat=couts.reduce((a,c)=>a+(c.total||0),0), nCout=couts.filter(c=>c.total!=null).length;
   return `<div class="box"><div class="row between"><h2>Devis importé</h2><span class="badge">${ok}/${nb} lignes reliées</span></div>
       <div class="hint">Associe un produit aux lignes non reconnues pour que leurs pièces apparaissent.</div>
+      ${S.prixErr==="manque"?"":`<div class="stats"><span>Coût matière estimé <b>${eur2(totMat)} HT</b></span><span><b>${nCout}</b> ligne(s) chiffrée(s) sur ${nb}</span></div>
+      <div class="hint">Calculé avec tes prix d'achat (page Prix) quand l'unité de la ligne correspond à celle du prix. Hors chutes, petites fournitures et transport.</div>`}
       ${S.confirmReplace?`<div class="confirm">Remplacer le devis supprime les lots, lignes et photos de ce chantier. Les documents de la bibliothèque sont conservés.
         <div class="row"><button class="btn danger small" data-act="replace-yes">Supprimer et réimporter</button><button class="btn ghost small" data-act="replace-no">Annuler</button></div></div>`
         :`<div class="row"><button class="btn ghost small" data-act="replace">Remplacer le devis</button></div>`}
@@ -359,6 +405,7 @@ function tabDevis(){
       ${l.lignes_devis.map(li=>`<div class="item">
         <div class="t"><div><span class="num">${esc(li.numero)}</span>${esc(li.designation)}</div><span class="qty">${li.quantite??""} ${esc(li.unite||"")}</span></div>
         <label class="f">Produit<select data-ligne="${li.id}" id="sel-${li.id}"><option value="">— Aucun produit —</option>${S.produits.map(p=>`<option value="${p.id}" ${p.id===li.produit_id?"selected":""}>${esc(p.nom)}</option>`).join("")}</select></label>
+        ${(c=>c?`<div class="cout">Prix d'achat : ${eur2(c.p.prix_ht)} / ${esc(c.p.unite||"")}${c.total!=null?` → coût matière ${eur2(c.total)} HT`:` · unité différente du devis, coût non calculé`}</div>`:"")(coutLigne(li))}
       </div>`).join("")}</article>`).join("")}`;
 }
 
@@ -454,6 +501,7 @@ function attestationPose(l){
   const desc=l.lignes_devis.map(li=>`${li.designation}${li.quantite!=null?" : "+String(li.quantite).replace(".",",")+" "+(li.unite||""):""}`).join("\n");
   const ac=!!c.accord_cadre, st=!!c.sous_traite;
   return `<article class="attp">
+    ${S.logo?`<img src="${S.logo}" alt="Logo ${esc(e.nom)}" style="max-height:44px;max-width:170px;object-fit:contain;align-self:flex-start">`:""}
     <h3>Attestation de travaux</h3>
     <div class="sub">ATTESTATION DE POSE</div>
     <table>
@@ -514,19 +562,30 @@ function tabDOE(){
           </div>
           <button class="btn" type="submit">Enregistrer</button>
         </form></details>
+      <div class="box" style="padding:12px;gap:8px"><h2 style="font-size:15px">Photo de la page de garde</h2>
+        ${("photo_couverture" in c)?`<div class="row">${coverSrc()?`<img src="${esc(coverSrc())}" alt="Photo de couverture" style="width:120px;height:80px;object-fit:cover;border-radius:6px;border:1px solid var(--line)">`:`<span class="hint">Aucune photo : la page de garde sera sans image.</span>`}
+          <label class="up" for="cover-file">${S.coverUrl?"Changer la photo":"+ Ajouter une photo"}<input type="file" id="cover-file" accept="image/*"></label></div>
+        ${Object.values(S.photos).flat().length?`<div class="hint">Ou choisis une photo du chantier :</div><div class="pickph">${Object.values(S.photos).flat().slice(0,24).map(p=>`<button type="button" data-act="cover-pick" data-path="${esc(p.storage_path)}" aria-pressed="${p.storage_path===c.photo_couverture}" aria-label="Utiliser cette photo"><img src="${esc(p.url||"")}" alt="" loading="lazy"></button>`).join("")}</div>`:""}
+        ${!c.photo_couverture&&coverSrc()?`<div class="hint">Par défaut, la première photo du chantier est utilisée.</div>`:""}`
+        :`<div class="hint">Lance <b>maj-prix-entreprise.sql</b> dans Supabase pour pouvoir choisir la photo.</div>`}
+      </div>
       <div class="row"><button class="btn" data-act="doe-complet">Générer le DOE complet (PDF)</button><button class="btn ghost" data-act="print-att">Imprimer les attestations seules</button></div>
       <div class="hint">Le DOE complet réunit dans un seul PDF : page de garde, sommaire, identification, matériaux mis en œuvre, attestations de pose, photos, puis toutes les fiches techniques et tous les PV en annexe.</div>
       ${S.doeLog?`<div class="bulk-log" id="doe-log">${esc(S.doeLog)}</div>`:""}
     </div>
     <div id="atts" class="list">${atts}</div>
     <div class="row between"><h2>Aperçu du DOE</h2><button class="btn" data-act="print">Imprimer / PDF du DOE</button></div>
-    <div class="hint">Le DOE imprimé contient la page de garde, le sommaire et les attestations. La fusion automatique des fiches techniques en un seul PDF viendra dans une prochaine version.</div>
+    <div class="hint">Cet aperçu imprimé contient la page de garde, le sommaire et les attestations. Pour le dossier complet avec les fiches techniques et les PV, utilise « Générer le DOE complet ».</div>
     <div class="sheet" id="sheet">
       <div class="cover">
+        ${S.logo?`<img class="clogo" src="${S.logo}" alt="Logo ${esc(e.nom)}">`:""}
         <div class="kicker">Dossier des Ouvrages Exécutés</div>
         <div class="ttl">${esc(c.nom)}</div>
+        ${c.designation_travaux?`<div>${esc(c.designation_travaux)}</div>`:""}
+        ${coverSrc()?`<img class="cphoto" src="${esc(coverSrc())}" alt="Photo du chantier">`:""}
         <dl><dt>Adresse</dt><dd>${esc(c.adresse||"—")}</dd><dt>Maître d'ouvrage</dt><dd>${esc(c.maitre_ouvrage||"—")}</dd><dt>Maître d'œuvre</dt><dd>${esc(c.maitre_oeuvre||"—")}</dd>
-        <dt>Entreprise</dt><dd>${esc(e.nom)}${e.adresse?" — "+esc(e.adresse):""}</dd>${e.siret?`<dt>SIRET</dt><dd class="mono">${esc(e.siret)}</dd>`:""}<dt>Réception</dt><dd>${frDate(c.date_reception)}</dd><dt>Complétude</dt><dd class="mono">${s.pct} %</dd></dl>
+        <dt>Réception</dt><dd>${frDate(c.date_reception)}</dd><dt>Complétude</dt><dd class="mono">${s.pct} %</dd></dl>
+        <div class="csoc">${infosSociete(e).map(l=>`<span>${esc(l)}</span>`).join("")}</div>
       </div>
       <h2>Sommaire</h2><ul class="toc">${toc||"<li>Aucun lot.</li>"}</ul>
       ${atts}
@@ -568,15 +627,122 @@ function viewBiblio(){
   </section>`;
 }
 
+const MSG_SQL=`<div class="confirm" style="background:var(--warn-soft)">La base n'est pas encore à jour : lance le fichier <b>maj-prix-entreprise.sql</b> dans Supabase (SQL Editor → Run), puis recharge la page.</div>`;
+
+/* ---- Entreprise ---- */
+function viewEntreprise(){
+  const e=S.ent, champs=("forme_juridique" in e);
+  const F=(id,lbl,v,ph="")=>`<label class="f">${lbl}<input type="text" id="e-${id}" value="${esc(v??"")}" placeholder="${esc(ph)}"></label>`;
+  return `<section class="panel">
+    <div class="row between"><h1>Entreprise</h1><span class="badge">page de garde et attestations</span></div>
+    ${champs?"":MSG_SQL}
+    <div class="box"><h2>Logo</h2>
+      <div class="row">${S.logo?`<img class="logo-prev" src="${S.logo}" alt="Logo ${esc(e.nom)}">`:`<span class="hint">Aucun logo pour l'instant.</span>`}
+        <label class="up" for="logo-file">${S.logo?"Remplacer le logo":"+ Ajouter le logo"}<input type="file" id="logo-file" accept="image/png,image/jpeg,image/svg+xml,image/webp"></label></div>
+      <div class="hint">PNG ou JPEG, fond blanc ou transparent. Il apparaît en haut de la page de garde, de chaque page du DOE et des attestations.</div>
+    </div>
+    <form class="box" data-form="entreprise"><h2>Identité de la société</h2>
+      <div class="grid2">
+        ${F("nom","Raison sociale",e.nom)}${F("forme","Forme juridique",e.forme_juridique,"SAS")}
+        ${F("capital","Capital",e.capital,"100 000 €")}${F("siret","SIRET",e.siret)}
+        ${F("adresse","Adresse",e.adresse)}${F("cp","Code postal",e.code_postal)}
+        ${F("ville","Ville",e.ville)}${F("tel","Téléphone",e.telephone)}
+        ${F("email","E-mail",e.email)}${F("web","Site internet",e.site_web)}
+        ${F("rcs","RCS",e.rcs,"Bordeaux 519 328 033")}${F("ape","Code APE",e.ape)}
+        ${F("tva","N° TVA intracommunautaire",e.tva)}${F("qualif","Qualifications",e.qualifications,"Qualibat")}
+      </div>
+      ${F("assur","Garantie décennale (assureur, adresse, couverture)",e.assurance)}
+      <label class="f">Coefficient de vente (prix d'achat × coefficient)<input type="text" id="e-coef" inputmode="decimal" value="${String(e.coef_vente??1.35).replace(".",",")}"></label>
+      <button class="btn" type="submit" ${champs?"":"disabled"}>Enregistrer</button>
+    </form>
+    <div class="box"><h2>Aperçu du pied de page</h2><div class="hint" style="display:flex;flex-direction:column;gap:2px">${infosSociete(e).map(l=>`<span>${esc(l)}</span>`).join("")}</div></div>
+  </section>`;
+}
+
+/* ---- Prix d'achat ---- */
+function viewPrix(){
+  if(S.prixErr==="manque") return `<section class="panel"><h1>Prix d'achat</h1>${MSG_SQL}</section>`;
+  const qq=norm(S.prixQ), fam=S.prixFam, k=coef();
+  const list=S.prix.filter(x=>(!fam||x.famille===fam)&&(!qq||norm([x.designation,x.marque,x.fournisseur,x.unite].join(" ")).includes(qq)));
+  const chiffres=S.prix.filter(x=>x.prix_ht!=null).length, lies=S.prix.filter(x=>x.produit_id).length;
+  const opts=pid=>`<option value="">—</option>`+S.produits.map(p=>`<option value="${p.id}" ${p.id===pid?"selected":""}>${esc(p.nom)}</option>`).join("");
+  let rows="";
+  [...FAMILLES, null].forEach(f=>{
+    const g=list.filter(x=>f===null ? !FAMILLES.includes(x.famille) : x.famille===f); if(!g.length) return;
+    rows+=`<tr class="grp"><td colspan="7">${esc(f||"Autres")}</td></tr>`+g.map(x=>{
+      const ec=x.prix_ht!=null&&x.prix_public?Math.round((1-x.prix_ht/x.prix_public)*100):null;
+      return `<tr>
+        <td style="min-width:220px"><div>${esc(x.designation)}</div><div class="m">${esc([x.marque,x.fournisseur].filter(Boolean).join(" · "))}${x.date_prix?" · "+frDate(x.date_prix):""}</div>${x.note?`<div class="m">${esc(x.note)}</div>`:""}</td>
+        <td>${esc(x.unite||"")}</td>
+        <td class="n"><input class="pcell ${x.prix_ht==null?"vide":""}" id="px-${x.id}" data-prix="${x.id}" inputmode="decimal" value="${x.prix_ht!=null?String(+x.prix_ht).replace(".",","):""}" placeholder="à saisir" aria-label="Prix HT ${esc(x.designation)}"></td>
+        <td class="n">${x.prix_public!=null?eur2(x.prix_public):"—"}${ec!=null&&ec>0?`<div class="m">−${ec} %</div>`:""}</td>
+        <td class="n">${x.prix_ht!=null?eur2(x.prix_ht*k):"—"}</td>
+        <td><select data-prixprod="${x.id}" id="pp-${x.id}" aria-label="Produit DOE lié">${opts(x.produit_id)}</select></td>
+        <td>${S.prixDel===x.id?`<span class="row"><button class="btn danger small" data-act="prix-del-yes" data-id="${x.id}">Supprimer</button><button class="btn ghost small" data-act="prix-del-no">Annuler</button></span>`:`<button class="link" data-act="prix-del" data-id="${x.id}" aria-label="Supprimer">✕</button>`}</td>
+      </tr>`;}).join("");
+  });
+  return `<section class="panel">
+    <div class="row between"><h1>Prix d'achat</h1><span class="badge">${chiffres}/${S.prix.length} chiffrés · ${lies} liés à la bibliothèque</span></div>
+    ${S.prixErr?`<div class="err">${esc(S.prixErr)}</div>`:""}
+    <div class="box">
+      <div class="row"><input type="text" id="prix-q" placeholder="Chercher un produit, une marque, un fournisseur…" value="${esc(S.prixQ)}" style="flex:1 1 220px">
+        <select id="prix-fam" style="flex:0 1 220px"><option value="">Toutes les familles</option>${FAMILLES.map(f=>`<option ${f===fam?"selected":""}>${f}</option>`).join("")}</select></div>
+      <div class="hint">Saisis ton prix net HT dans la case verte : il est enregistré à la sortie du champ, avec la date du jour. « Vente HT » applique ton coefficient (${String(k).replace(".",",")}, réglable dans Entreprise). Lie un prix à un produit de la bibliothèque pour voir le coût matière dans l'onglet Devis des chantiers.</div>
+    </div>
+    <div class="tscroll"><table class="ptable"><thead><tr><th>Produit</th><th>Unité</th><th class="n">Mon prix HT</th><th class="n">Prix public</th><th class="n">Vente HT</th><th>Produit DOE lié</th><th></th></tr></thead>
+      <tbody>${rows||`<tr><td colspan="7" class="empty">${S.prix.length?"Aucun prix ne correspond à ta recherche.":"Aucun prix pour l'instant. Ajoute le premier ci-dessous."}</td></tr>`}</tbody></table></div>
+    <details class="box"><summary>Ajouter un prix</summary>
+      <form data-form="prix" style="display:flex;flex-direction:column;gap:12px;margin-top:12px">
+        <div class="grid3">
+          <label class="f">Famille<select id="np-fam">${FAMILLES.map(f=>`<option>${f}</option>`).join("")}</select></label>
+          <label class="f">Produit<input type="text" id="np-des" required></label>
+          <label class="f">Marque<input type="text" id="np-marque"></label>
+          <label class="f">Unité<input type="text" id="np-unite" placeholder="m², ml, u, sac…"></label>
+          <label class="f">Mon prix HT<input type="text" id="np-prix" inputmode="decimal"></label>
+          <label class="f">Fournisseur<input type="text" id="np-four" placeholder="Point.P Mérignac"></label>
+        </div>
+        <button class="btn" type="submit">Ajouter</button>
+      </form></details>
+  </section>`;
+}
+
 /* ===================== ACTIONS ===================== */
 async function goHome(){ S.view="chantiers"; S.ch=null; await loadChantiers(); render(); }
 async function openChantier(id){
   S.ch=S.chantiers.find(c=>c.id===id); S.view="chantier"; S.confirmReplace=false;
   $("#app").innerHTML=`<div class="loading">Chargement du chantier…</div>`;
-  await loadBiblio(); await loadChantierData();
+  await loadBiblio(); await loadPrix(); await loadChantierData();
   S.tab=S.lots.length?"pieces":"devis"; render(); window.scrollTo({top:0});
 }
-async function refreshChantier(){ await loadBiblio(); await loadChantierData(); render(); }
+async function refreshChantier(){ await loadBiblio(); await loadPrix(); await loadChantierData(); render(); }
+
+/* Logo de l'entreprise → bucket documents */
+async function uploadLogo(input){
+  const f=input.files[0]; if(!f) return;
+  if(f.size>2*1024*1024) return toast("Logo trop lourd : 2 Mo maximum");
+  const ext=(f.name.split(".").pop()||"png").toLowerCase();
+  const path=`${S.ent.id}/entreprise/logo-${Date.now()}.${ext}`;
+  const {error}=await sb.storage.from("documents").upload(path,f,{contentType:f.type||"image/png"});
+  if(error) return toast(messageErreur(error));
+  await q(sb.from("entreprises").update({logo_path:path}).eq("id",S.ent.id));
+  await loadEntreprise(); render(); toast("Logo enregistré");
+}
+/* Photo de couverture du DOE */
+async function uploadCover(input){
+  const f=input.files[0]; if(!f) return;
+  const path=`${S.ent.id}/chantiers/${S.ch.id}/couverture-${Date.now()}-${safeName(f.name)}`;
+  toast("Envoi de la photo…");
+  const {error}=await sb.storage.from("photos").upload(path,f,{contentType:f.type||"image/jpeg"});
+  if(error) return toast(messageErreur(error));
+  await setCover(path);
+}
+async function setCover(path){
+  const [c]=await q(sb.from("chantiers").update({photo_couverture:path}).eq("id",S.ch.id).select());
+  S.ch=c; const i=S.chantiers.findIndex(x=>x.id===c.id); if(i>=0) S.chantiers[i]=c;
+  await loadChantierData(); render(); toast("Photo de couverture enregistrée");
+}
+/* Photo utilisée en couverture : celle choisie, sinon la première photo du chantier */
+function coverSrc(){ if(S.coverUrl) return S.coverUrl; const first=S.lots.map(l=>(S.photos[l.id]||[])[0]).find(Boolean); return first?first.url:null; }
 
 async function importDevis(){
   const lots=parseDevis($("#devis").value);
@@ -663,7 +829,7 @@ const A4W=794, A4H=1123;
 function pageHTML(inner, num, total){
   const e=S.ent, c=S.ch;
   return `<div class="pg" style="width:${A4W}px;height:${A4H}px;box-sizing:border-box;padding:56px 60px 70px;background:#fff;color:#111;font-family:Arial,Helvetica,sans-serif;font-size:13px;line-height:1.45;position:relative;overflow:hidden">
-    <div style="display:flex;justify-content:space-between;font-size:10.5px;color:#555;border-bottom:1px solid #999;padding-bottom:6px;margin-bottom:22px"><span>DOE — ${esc(e.nom)}</span><span>${esc(c.nom)}</span></div>
+    <div style="display:flex;justify-content:space-between;align-items:flex-end;font-size:10.5px;color:#555;border-bottom:1px solid #999;padding-bottom:6px;margin-bottom:22px"><span style="display:flex;align-items:center;gap:8px">${S.logo?`<img src="${S.logo}" style="height:26px;max-width:110px;object-fit:contain">`:""}DOE — ${esc(e.nom)}</span><span>${esc(c.nom)}</span></div>
     ${inner}
     <div style="position:absolute;left:60px;right:60px;bottom:28px;display:flex;justify-content:space-between;font-size:10px;color:#666;border-top:1px solid #bbb;padding-top:6px"><span>${esc(e.nom)}${e.siret?" – SIRET "+esc(e.siret):""}</span><span>Page ${num} sur ${total}</span></div>
   </div>`;
@@ -716,18 +882,34 @@ async function genererDOE(){
 
   // 5. Pages du dossier
   const pages=[];
-  pages.push(`<div style="width:${A4W}px;height:${A4H}px;box-sizing:border-box;padding:90px 70px;background:#fff;color:#111;font-family:Arial,Helvetica,sans-serif;display:flex;flex-direction:column;justify-content:space-between">
-    <div><div style="font-size:14px;letter-spacing:.2em;color:#555">${esc(e.nom)}</div>
-      <div style="margin-top:160px;font-size:15px;letter-spacing:.25em;color:#1a2b4a;font-weight:700">DOSSIER DES OUVRAGES EXÉCUTÉS</div>
-      <div style="font-size:38px;font-weight:800;margin-top:14px;line-height:1.1">${esc(c.nom)}</div>
-      <div style="font-size:16px;margin-top:12px;color:#333">${esc(c.designation_travaux||"")}</div>
-      <div style="width:90px;height:4px;background:#1a2b4a;margin-top:26px"></div>
-      <table style="margin-top:40px;font-size:14px;border-collapse:collapse">
-        <tr><td style="padding:4px 18px 4px 0;color:#555">Adresse</td><td>${esc(c.adresse||"—")}</td></tr>
-        <tr><td style="padding:4px 18px 4px 0;color:#555">Maître d'ouvrage</td><td>${esc(c.maitre_ouvrage||"—")}</td></tr>
-        <tr><td style="padding:4px 18px 4px 0;color:#555">Maître d'œuvre</td><td>${esc(c.maitre_oeuvre||"—")}</td></tr>
-        <tr><td style="padding:4px 18px 4px 0;color:#555">Réception</td><td>${frDate(c.date_reception)}</td></tr></table></div>
-    <div style="font-size:12px;color:#444;border-top:1px solid #999;padding-top:10px">${esc(e.nom)}${e.adresse?" — "+esc(e.adresse):""}${e.siret?"<br>SIRET "+esc(e.siret):""}<br>Édité le ${new Date().toLocaleDateString("fr-FR")}</div></div>`);
+  // Page de garde : logo, bandeau titre, grande photo, informations, bloc société
+  let coverData=null; const cs=coverSrc();
+  if(cs){ try{ coverData=await toDataURL(cs); }catch(err){ log("✗ Photo de couverture illisible : page de garde sans photo."); } }
+  const soc=infosSociete(e), BLEU="#1a3f8f";
+  const ligneInfo=(k,v)=>`<tr><td style="padding:5px 16px 5px 0;color:#5a6472;white-space:nowrap;vertical-align:top">${k}</td><td style="padding:5px 0;font-weight:600">${v}</td></tr>`;
+  pages.push(`<div style="width:${A4W}px;height:${A4H}px;box-sizing:border-box;background:#fff;color:#111;font-family:Arial,Helvetica,sans-serif;display:flex;flex-direction:column">
+    <div style="padding:40px 56px 0;display:flex;justify-content:space-between;align-items:center;min-height:96px">
+      ${S.logo?`<img src="${S.logo}" style="max-height:78px;max-width:260px;object-fit:contain">`:`<div style="font-size:24px;font-weight:800;color:${BLEU}">${esc(e.nom)}</div>`}
+      <div style="text-align:right;font-size:11px;color:#5a6472;line-height:1.5">${esc([e.telephone&&"Tél. "+e.telephone].filter(Boolean).join(""))}${e.email?"<br>"+esc(e.email):""}${e.site_web?"<br>"+esc(e.site_web):""}</div>
+    </div>
+    <div style="margin-top:26px;background:${BLEU};color:#fff;padding:26px 56px 24px">
+      <div style="font-size:13px;letter-spacing:.28em;font-weight:700;opacity:.9">DOSSIER DES OUVRAGES EXÉCUTÉS</div>
+      <div style="font-size:36px;font-weight:800;line-height:1.12;margin-top:10px">${esc(c.nom)}</div>
+      ${c.designation_travaux?`<div style="font-size:16px;margin-top:8px;opacity:.95">${esc(c.designation_travaux)}</div>`:""}
+    </div>
+    <div style="padding:26px 56px 0;flex:1;display:flex;flex-direction:column;gap:22px;min-height:0">
+      ${coverData?`<div style="height:420px;border-radius:4px;overflow:hidden;border:1px solid #cfd6df"><img src="${coverData}" style="width:100%;height:100%;object-fit:cover;display:block"></div>`
+        :`<div style="height:420px;border:2px dashed #cfd6df;border-radius:4px;display:flex;align-items:center;justify-content:center;color:#9aa3ad;font-size:14px">Photo du chantier</div>`}
+      <table style="font-size:14px;border-collapse:collapse">
+        ${ligneInfo("Lieu des travaux",esc(c.adresse||"—"))}${ligneInfo("Maître d'ouvrage",esc(c.maitre_ouvrage||"—"))}
+        ${ligneInfo("Maître d'œuvre",esc(c.maitre_oeuvre||"—"))}${ligneInfo("Date de réception",frDate(c.date_reception))}
+        ${c.date_debut||c.date_fin?ligneInfo("Période des travaux",esc([c.date_debut,c.date_fin].filter(Boolean).join(" → "))):""}
+      </table>
+    </div>
+    <div style="margin:0 56px 40px;border-top:3px solid ${BLEU};padding-top:12px;font-size:11px;color:#333;line-height:1.55">
+      ${soc.map((l,i)=>`<div style="${i?"":"font-weight:700;font-size:12.5px;color:"+BLEU}">${esc(l)}</div>`).join("")}
+      <div style="color:#7a838e;margin-top:4px">Édité le ${new Date().toLocaleDateString("fr-FR")}</div>
+    </div></div>`);
   const ligneSom=(t,pg,ind)=>`<div style="display:flex;gap:8px;padding:5px 0;${ind?"padding-left:22px;font-size:12px":"font-weight:700"}"><span>${t}</span><span style="flex:1;border-bottom:1px dotted #999;transform:translateY(-4px)"></span><span>${pg}</span></div>`;
   let som=H2("Sommaire")+ligneSom("A. Identification du chantier",3)+ligneSom("B. Matériaux mis en œuvre",pMat)+ligneSom("C. Attestations de pose",pAtt)
     +S.lots.map((l,i)=>ligneSom(`${esc(l.numero)} ${esc(l.designation)}`,pAtt+i,1)).join("")
@@ -742,7 +924,9 @@ async function genererDOE(){
     <tr>${TH("Période des travaux")}${TD(esc([c.date_debut,c.date_fin].filter(Boolean).join(" → ")||""))}</tr><tr>${TH("Date de réception")}${TD(frDate(c.date_reception))}</tr>
     <tr>${TH("Montant HT des travaux")}${TD(esc(euros(c.montant_ht)))}</tr></table>
     <div style="height:22px"></div>${H2("Entreprise")}<table ${TB}>
-    <tr>${TH("Raison sociale","35%")}${TD(esc(e.nom))}</tr><tr>${TH("Adresse")}${TD(esc(e.adresse||""))}</tr><tr>${TH("SIRET")}${TD(esc(e.siret||""))}</tr><tr>${TH("Signataire")}${TD(esc(c.signataire||S.nomAffiche||""))}</tr></table>
+    <tr>${TH("Raison sociale","35%")}${TD(esc(e.nom))}</tr><tr>${TH("Adresse")}${TD(esc([e.adresse,[e.code_postal,e.ville].filter(Boolean).join(" ")].filter(Boolean).join(", ")))}</tr><tr>${TH("SIRET")}${TD(esc(e.siret||""))}</tr>
+    ${e.telephone||e.email?`<tr>${TH("Contact")}${TD(esc([e.telephone,e.email].filter(Boolean).join(" – ")))}</tr>`:""}
+    ${e.assurance?`<tr>${TH("Garantie décennale")}${TD(esc(e.assurance))}</tr>`:""}${e.qualifications?`<tr>${TH("Qualifications")}${TD(esc(e.qualifications))}</tr>`:""}<tr>${TH("Signataire")}${TD(esc(c.signataire||S.nomAffiche||""))}</tr></table>
     <div style="height:22px"></div>${H2("Lots réalisés")}<table ${TB}><tr>${TH("Lot","12%")}${TH("Désignation")}${TH("Lignes","14%")}</tr>
     ${S.lots.map(l=>`<tr>${TD(esc(l.numero))}${TD(esc(l.designation))}${TD(l.lignes_devis.length)}</tr>`).join("")}</table>`,3,total));
   matChunks.forEach((ch,i)=>pages.push(pageHTML((i?"":H2("B. Matériaux mis en œuvre"))+`<table ${TB}><tr>${TH("Lot","20%")}${TH("Produit","27%")}${TH("Fabricant","13%")}${TH("DTU","10%")}${TH("Documents")}</tr>
@@ -862,7 +1046,18 @@ document.addEventListener("click",async e=>{
     else if(a==="print"){ document.body.dataset.print="doe"; window.print(); }
     else if(a==="print-att"){ document.body.dataset.print="att"; window.print(); }
     else if(a==="doe-complet") await busy(b,genererDOE);
+    else if(a==="entreprise"){ S.view="entreprise"; render(); }
+    else if(a==="prix"){ S.view="prix"; $("#app").innerHTML=`<div class="loading">Chargement des prix…</div>`; await loadBiblio(); await loadPrix(); render(); }
+    else if(a==="prix-del"){ S.prixDel=b.dataset.id; render(); }
+    else if(a==="prix-del-no"){ S.prixDel=null; render(); }
+    else if(a==="prix-del-yes"){ await q(sb.from("prix_achat").delete().eq("id",b.dataset.id)); S.prixDel=null; await loadPrix(); render(); toast("Prix supprimé"); }
+    else if(a==="cover-pick") await busy(b,()=>setCover(b.dataset.path));
   }catch(err){}
+});
+document.addEventListener("input",e=>{
+  if(e.target.id!=="prix-q") return;
+  S.prixQ=e.target.value; const pos=e.target.selectionStart; render();
+  const el=$("#prix-q"); if(el){ el.focus(); try{ el.setSelectionRange(pos,pos); }catch(_){} }
 });
 document.addEventListener("keydown",e=>{ if(e.key==="Enter" && e.target.matches('[role="link"][data-act]')) e.target.click(); });
 
@@ -870,6 +1065,21 @@ document.addEventListener("change",async e=>{
   const t=e.target;
   try{
     if(t.id==="bulk-files") await importGroupe(t);
+    else if(t.id==="logo-file") await uploadLogo(t);
+    else if(t.id==="cover-file") await uploadCover(t);
+    else if(t.id==="prix-fam"){ S.prixFam=t.value; render(); }
+    else if(t.matches("input[data-prix]")){
+      const v=String(t.value).replace(/\s|€/g,"").replace(",","."); const n=v===""?null:Number(v);
+      if(n!==null&&isNaN(n)) return toast("Prix non reconnu : écris par exemple 12,50");
+      await q(sb.from("prix_achat").update({prix_ht:n,date_prix:new Date().toISOString().slice(0,10),updated_at:new Date().toISOString()}).eq("id",t.dataset.prix));
+      const x=S.prix.find(y=>y.id===t.dataset.prix); if(x){ x.prix_ht=n; x.date_prix=new Date().toISOString().slice(0,10); }
+      toast("Prix enregistré");
+    }
+    else if(t.matches("select[data-prixprod]")){
+      await q(sb.from("prix_achat").update({produit_id:t.value||null}).eq("id",t.dataset.prixprod));
+      const x=S.prix.find(y=>y.id===t.dataset.prixprod); if(x) x.produit_id=t.value||null;
+      toast(t.value?"Prix lié au produit":"Lien retiré");
+    }
     else if(t.matches("input[type=file][data-piece]")) await uploadDoc(t);
     else if(t.matches("input[type=file][data-lotphoto]")) await uploadPhotos(t);
     else if(t.matches("select[data-ligne]")){
@@ -921,6 +1131,23 @@ document.addEventListener("submit",async e=>{
       const [c]=await q(sb.from("chantiers").update(upd).eq("id",S.ch.id).select());
       S.ch=c; const i=S.chantiers.findIndex(x=>x.id===c.id); if(i>=0) S.chantiers[i]=c;
       render(); toast("Informations enregistrées");
+    }
+    if(k==="entreprise"){
+      const v=id=>$("#e-"+id).value.trim()||null;
+      const cf=Number(String($("#e-coef").value).replace(",","."));
+      if(!v("nom")) return toast("La raison sociale est obligatoire");
+      if(!(cf>=1&&cf<10)) return toast("Coefficient invalide : écris par exemple 1,35");
+      const upd={nom:v("nom"),forme_juridique:v("forme"),capital:v("capital"),siret:v("siret"),adresse:v("adresse"),code_postal:v("cp"),ville:v("ville"),
+        telephone:v("tel"),email:v("email"),site_web:v("web"),rcs:v("rcs"),ape:v("ape"),tva:v("tva"),qualifications:v("qualif"),assurance:v("assur"),coef_vente:cf};
+      await q(sb.from("entreprises").update(upd).eq("id",S.ent.id));
+      await loadEntreprise(); render(); toast("Entreprise enregistrée");
+    }
+    if(k==="prix"){
+      const v=String($("#np-prix").value).replace(/\s|€/g,"").replace(",","."); const n=v===""?null:Number(v);
+      if(n!==null&&isNaN(n)) return toast("Prix non reconnu : écris par exemple 12,50");
+      await q(sb.from("prix_achat").insert({entreprise_id:S.ent.id,famille:$("#np-fam").value,designation:$("#np-des").value.trim(),marque:$("#np-marque").value.trim()||null,
+        unite:$("#np-unite").value.trim()||null,prix_ht:n,fournisseur:$("#np-four").value.trim()||null,date_prix:n!=null?new Date().toISOString().slice(0,10):null}));
+      await loadPrix(); render(); toast("Prix ajouté");
     }
     if(k==="produit"){
       const split=v=>v.split(",").map(x=>x.trim()).filter(Boolean);
