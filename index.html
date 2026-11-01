@@ -878,6 +878,7 @@ function viewBiblio(){
   const nbDocs=S.produits.reduce((a,p)=>a+p.pieces_requises.reduce((b,r)=>b+r.documents.length,0),0);
   return `<section class="panel">
     <div class="row between"><h1>Bibliothèque produits</h1><span class="badge">${S.produits.length} produits · ${nbDocs} documents</span></div>
+    <div class="box" style="padding:12px"><input type="search" id="bib-q" placeholder="🔍 Chercher un produit, une marque, un mot-clé, un fournisseur…" value="${esc(S.bibQ||"")}" aria-label="Rechercher dans la bibliothèque" style="font:inherit;font-size:15px;width:100%;padding:10px 12px;border:1px solid var(--line);border-radius:8px;background:var(--paper);color:var(--ink)"></div>
     ${S.produits.length?"":`<div class="box"><h2>Démarrer</h2><div class="hint">Charge 9 produits courants (plâtrerie, peinture, sols, menuiserie) avec leurs pièces exigées et leurs mots-clés. Tu ajoutes ensuite tes PDF.</div><div class="row"><button class="btn" data-act="seed">Charger la bibliothèque de départ</button></div></div>`}
     <div class="box"><h2>Importer plusieurs PDF</h2>
       <div class="hint">Sélectionne d'un coup toutes tes fiches techniques et PV. Un produit est créé par nom de fichier, et le document est classé en fiche technique, PV, FDES ou fiche produit d'après son nom. Les fichiers liés au même produit sont regroupés, par exemple « PV Feu - Udirev » et « Fiche technique - Udirev ».</div>
@@ -896,7 +897,6 @@ function viewBiblio(){
         <label class="f">Pièces exigées (séparées par des virgules)<input type="text" id="p-pieces" value="Fiche technique"></label>
         <button class="btn" type="submit">Ajouter le produit</button>
       </form></details>
-    <div class="row"><input type="text" id="bib-q" placeholder="Chercher un produit, une marque, un mot-clé…" value="${esc(S.bibQ||"")}" style="flex:1 1 260px"></div>
     <div class="list">${S.produits.filter(p=>!S.bibQ||norm([p.nom,(p.mots_cles||[]).join(" "),p.fournisseurs?.nom].join(" ")).includes(norm(S.bibQ))).map(p=>`<article class="lot">
       <header><h3 style="min-width:0">${esc(p.nom)}</h3><span class="row"><span class="badge">${esc(p.dtu||"sans DTU")}${p.fournisseurs?" · "+esc(p.fournisseurs.nom):""}</span>
         <button class="link" data-act="prod-edit" data-id="${p.id}">Modifier</button>
