@@ -427,7 +427,9 @@ function viewChantier(){
 function tabDevis(){
   if(!S.lots.length) return `<div class="box">
       <h2>Import du devis</h2>
-      <div class="hint">Colle tes lignes depuis Excel ou Obat : N° · Désignation · Unité · Quantité (tabulation ou point-virgule). Une ligne sans unité = titre de lot.</div>
+      <div class="hint">Importe le PDF du devis (Obat ou autre), ou colle tes lignes depuis Excel : N° · Désignation · Unité · Quantité (tabulation ou point-virgule). Une ligne sans unité = titre de lot.</div>
+      <div class="row"><label class="btn" for="devis-pdf" style="position:relative">Importer le PDF du devis<input type="file" id="devis-pdf" accept=".pdf,application/pdf" style="position:absolute;width:1px;height:1px;opacity:0;left:0;top:0"></label></div>
+      <div class="hint" id="pdf-info" aria-live="polite"></div>
       ${S.produits.length?"":`<div class="confirm" style="background:var(--warn-soft)">Ta bibliothèque est vide : aucun produit ne sera reconnu. <button class="link" data-act="biblio">Ouvrir la bibliothèque</button></div>`}
       <textarea id="devis" spellcheck="false" placeholder="Colle ici les lignes de ton devis…"></textarea>
       <div class="row"><button class="btn" data-act="import">Importer le devis</button><button class="btn ghost" data-act="exemple">Coller l'exemple</button></div>
@@ -854,6 +856,84 @@ async function creerProduit({nom,dtu,four,mots,pieces}){
   const [p]=await q(sb.from("produits").insert({entreprise_id:S.ent.id,nom,dtu:dtu||null,fournisseur_id:fid,mots_cles:mots}).select());
   if(pieces.length) await q(sb.from("pieces_requises").insert(pieces.map((l,i)=>({entreprise_id:S.ent.id,produit_id:p.id,libelle:l,ordre:i}))));
 }
+/* ===================== IMPORT DU DEVIS EN PDF ===================== */
+/* Lit le texte du PDF (pdf.js), reconstitue les lignes du tableau, puis remplit le cadre au format N°;Désignation;Unité;Quantité pour vérification. */
+const PDFJS_URL="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js", PDFJS_WORKER="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
+function chargerPdfJs(){
+  if(window.pdfjsLib) return Promise.resolve(window.pdfjsLib);
+  return new Promise((ok,ko)=>{ const s=document.createElement("script"); s.src=PDFJS_URL;
+    s.onload=()=>{ window.pdfjsLib.GlobalWorkerOptions.workerSrc=PDFJS_WORKER; ok(window.pdfjsLib); }; s.onerror=()=>ko(new Error("Lecteur PDF non chargé : vérifie ta connexion.")); document.head.appendChild(s); });
+}
+const UNITES={"m2":"m²","m²":"m²","m":"ml","ml":"ml","ml.":"ml","mètre":"ml","m3":"m³","m³":"m³","u":"u","u.":"u","un":"u","unité":"u","unite":"u","pce":"u","pc":"u","pièce":"u","piece":"u","ens":"ens","ensemble":"ens","ft":"ft","forfait":"ft","fft":"ft","fort":"ft","h":"h","heure":"h","kg":"kg","t":"t","l":"l","jour":"j","j":"j","lot":"lot","pm":"pm"};
+const estNombre=t=>/^-?\d{1,3}([  .]\d{3})*(,\d+)?$|^-?\d+([.,]\d+)?$/.test(String(t).trim());
+const versNombre=t=>parseFloat(String(t).replace(/[  ]/g,"").replace(/\.(?=\d{3}\b)/g,"").replace(",","."));
+const estNumero=t=>/^\d{1,3}(\.\d{1,3}){0,4}\.?$/.test(String(t).trim());
+async function lignesPdf(file){
+  const pdfjs=await chargerPdfJs(); const doc=await pdfjs.getDocument({data:await file.arrayBuffer()}).promise; const rangs=[];
+  for(let p=1;p<=doc.numPages;p++){
+    const page=await doc.getPage(p), tc=await page.getTextContent(), its=tc.items.filter(i=>i.str.trim()).map(i=>({s:i.str.trim(),x:i.transform[4],y:i.transform[5],w:i.width}));
+    its.sort((a,b)=>b.y-a.y||a.x-b.x); const groupes=[];
+    its.forEach(i=>{ const g=groupes.find(g=>Math.abs(g.y-i.y)<3); if(g) g.items.push(i); else groupes.push({y:i.y,items:[i]}); });
+    groupes.forEach(g=>{ g.items.sort((a,b)=>a.x-b.x); g.page=p; rangs.push(g); });
+  }
+  return rangs;
+}
+function analyserDevisPdf(rangs){
+  // 1. Colonnes d'après la ligne d'en-tête du tableau
+  let col=null;
+  for(const r of rangs){ const t=r.items.map(i=>i.s).join(" ");
+    if(/d[ée]signation|libell[ée]/i.test(t) && /qt[ée]|quantit|unit|\bu\b|p\.?\s?u|prix/i.test(t)){
+      const x=re=>{ const i=r.items.find(i=>re.test(i.s)); return i?i.x:null; };
+      col={des:x(/d[ée]signation|libell[ée]/i), qte:x(/^(qt[ée]s?|quantit[ée]s?)(?![a-z])/i), u:x(/^(u\.?|unit[ée]s?)$/i), pu:x(/p\.?\s?u\b|prix|tva|total|montant/i)};
+      break; } }
+  const finDes=col?Math.min(...[col.qte,col.u,col.pu].filter(v=>v!=null).map(v=>v-4)):Infinity;
+  const out=[]; let dernier=null;
+  for(const r of rangs){
+    const items=r.items, texte=items.map(i=>i.s).join(" ");
+    if(/^(sous[- ]?total|total|montant|tva|net à payer|acompte|report|page\s+\d|conditions|pour le client)/i.test(texte)){ dernier=null; continue; }
+    if(/d[ée]signation/i.test(texte) && /qt|unit|prix/i.test(texte)) continue;
+    let num=null, reste=items;
+    if(estNumero(items[0].s) && (!col || col.des==null || items[0].x < col.des+6) && items.length>1){ num=items[0].s.replace(/\.$/,""); reste=items.slice(1); }
+    // texte de désignation et valeurs à droite
+    const des=[], droite=[];
+    // un nombre aligné à droite peut commencer avant l'en-tête « Qté » : on regarde où il finit
+    reste.forEach(i=>{ if(col && (i.x>=finDes || (estNombre(i.s) && i.x+i.w>=finDes))) droite.push(i); else des.push(i); });
+    if(!col){ // sans en-tête : les nombres et unités en fin de ligne vont à droite
+      while(des.length && (estNombre(des[des.length-1].s)||UNITES[norm(des[des.length-1].s)]||/€|%/.test(des[des.length-1].s))) droite.unshift(des.pop());
+    }
+    let designation=des.map(i=>i.s).join(" ").replace(/\s+/g," ").trim();
+    let unite="", qte=null;
+    const proche=(cx)=>droite.slice().sort((a,b)=>Math.abs(a.x-cx)-Math.abs(b.x-cx))[0];
+    const uItem=droite.find(i=>UNITES[norm(i.s).replace(/\s/g,"")]);
+    if(uItem) unite=UNITES[norm(uItem.s).replace(/\s/g,"")];
+    if(col && col.qte!=null){ const q=proche(col.qte); if(q && estNombre(q.s) && Math.abs(q.x-col.qte)<45) qte=versNombre(q.s); }
+    if(qte==null){ const nums=droite.filter(i=>estNombre(i.s)); if(nums.length){ const iu=uItem?droite.indexOf(uItem):-1;
+      const avant=iu>0&&estNombre(droite[iu-1].s)?droite[iu-1]:null, apres=iu>=0&&droite[iu+1]&&estNombre(droite[iu+1].s)?droite[iu+1]:null;
+      qte=versNombre((avant||apres||nums[0]).s); } }
+    if(num && designation && !unite && qte==null){ // titre : lot si numéro simple (« 2 »), sous-titre ignoré sinon (« 2.11 »)
+      if(!num.includes(".")) out.push({type:"lot",num,des:designation}); dernier=null; continue; }
+    if(num && designation){ dernier={type:"ligne",num,des:designation,unite:unite||"u",qte,y:r.y,page:r.page}; out.push(dernier); continue; }
+    // suite de la désignation sur la ligne suivante : même page, juste en dessous, alignée sur la colonne désignation
+    const x0=items[0].x, alignee=!col||col.des==null||Math.abs(x0-col.des)<40;
+    if(!num && designation && dernier && !unite && qte==null && alignee && r.page===dernier.page && dernier.y-r.y<22 && dernier.des.length<220){ dernier.des+=" "+designation; dernier.y=r.y; }
+    else if(!num) dernier=dernier&&r.page===dernier.page&&dernier.y-r.y<22?dernier:null;
+  }
+  return out.map(o=>o.type==="lot"?`${o.num};${o.des.replace(/;/g,",")};;`:`${o.num};${o.des.slice(0,240).replace(/;/g,",")};${o.unite};${o.qte!=null?String(o.qte).replace(".",","):""}`).join("\n");
+}
+async function importerPdfDevis(input){
+  const f=input.files[0]; if(!f) return;
+  toast("Lecture du PDF…");
+  try{
+    const txt=analyserDevisPdf(await lignesPdf(f));
+    const nb=txt?txt.split("\n").length:0;
+    if(!nb){ toast("Aucune ligne de devis trouvée dans ce PDF. Exporte-le en Excel depuis Obat et colle les lignes."); return; }
+    $("#devis").value=txt; S.pdfLu=f.name;
+    const info=$("#pdf-info"); if(info) info.innerHTML=`<b>${esc(f.name)}</b> : ${txt.split("\n").filter(l=>/;;$/.test(l)).length} lots et ${txt.split("\n").filter(l=>!/;;$/.test(l)).length} lignes trouvés. Vérifie le tableau ci-dessous (tu peux le corriger), puis clique sur « Importer le devis ».`;
+    toast("PDF lu : vérifie puis importe");
+  }catch(e){ console.error(e); toast(e.message||"Lecture du PDF impossible"); }
+  input.value="";
+}
+
 /* ===================== DOE COMPLET (PDF unique) ===================== */
 const A4W=794, A4H=1123;
 const PF=`'IBM Plex Sans',Arial,sans-serif`, PFT=`Archivo,'IBM Plex Sans',Arial,sans-serif`;
@@ -1137,6 +1217,7 @@ document.addEventListener("change",async e=>{
   const t=e.target;
   try{
     if(t.id==="bulk-files") await importGroupe(t);
+    else if(t.id==="devis-pdf") await importerPdfDevis(t);
     else if(t.matches("input[type=file][data-piece]")) await uploadDoc(t);
     else if(t.matches("input[type=file][data-lotphoto]")) await uploadPhotos(t);
     else if(t.matches("input[type=file][data-entimg]")) await imageEntreprise(t);
