@@ -134,16 +134,7 @@ details summary{cursor:pointer;font-weight:600;color:var(--accent)}
 }
 @media (min-width:1600px){ .wrap{max-width:1520px} .list.chs{grid-template-columns:repeat(4,minmax(0,1fr))} }
 /* Attestation de pose au format MAGENCIA (modèle FNTP) */
-.attp{background:#fff;color:#111;border:1px solid var(--line);border-radius:4px;padding:22px 20px;display:flex;flex-direction:column;gap:10px;font-size:13px}
-.attp h3{margin:0;font-family:var(--f-display);font-size:18px;text-align:center;letter-spacing:.02em}
-.attp .sub{text-align:center;font-weight:700;letter-spacing:.3em;font-size:13px}
-.attp table{width:100%;border-collapse:collapse}
-.attp td{border:1px solid #444;padding:6px 8px;vertical-align:top}
-.attp td.k{width:38%;font-weight:600;background:#f2f4f6}
-.attp .fin{border:1px solid #444;padding:10px;display:flex;flex-direction:column;gap:6px}
-.attp .sigbox{height:70px;border:1px dashed #888;margin-top:4px}
-.attp .foot{font-size:10px;color:#666;text-align:right}
-.attp .desc{white-space:pre-line}
+.attp{border:1px solid var(--line);border-radius:4px;padding:22px 24px}
 /* Page de garde (aperçu écran) */
 .cover .clogo{max-height:56px;max-width:200px;object-fit:contain;align-self:flex-start}
 .cover .cphoto{width:100%;aspect-ratio:16/9;object-fit:cover;border-radius:4px;border:1px solid var(--line);max-width:100%}
@@ -523,37 +514,55 @@ const euros = v=> v==null||v==="" ? "" : Number(v).toLocaleString("fr-FR",{minim
 const cp = a=> (String(a||"").match(/\b\d{5}\b/)||[""])[0];
 const coche = (v,oui)=> (v===oui?"☒":"☐");
 function attestationPose(l){
-  const c=S.ch, e=S.ent;
-  const desc=l.lignes_devis.map(li=>`${li.designation}${li.quantite!=null?" : "+String(li.quantite).replace(".",",")+" "+(li.unite||""):""}`).join("\n");
+  const c=S.ch, e=S.ent, BLEU="#1a3f8f";
   const ac=!!c.accord_cadre, st=!!c.sous_traite;
-  return `<article class="attp">
-    ${S.logo?`<img src="${S.logo}" alt="Logo ${esc(e.nom)}" style="max-height:44px;max-width:170px;object-fit:contain;align-self:flex-start">`:""}
-    <h3>Attestation de travaux</h3>
-    <div class="sub">ATTESTATION DE POSE</div>
-    <table>
-      <tr><td class="k">Entreprise</td><td>${esc(e.nom)}</td></tr>
-      <tr><td class="k">Maître d'ouvrage</td><td>${esc(c.maitre_ouvrage||"")}</td></tr>
-      <tr><td class="k">Maître d'œuvre</td><td>${esc(c.maitre_oeuvre||"")}</td></tr>
-      <tr><td class="k">Désignation des travaux</td><td>${esc(c.designation_travaux||c.nom)}</td></tr>
-      <tr><td class="k">Désignation de la pose</td><td>${esc(l.designation)}</td></tr>
-      <tr><td class="k">S'agit-il d'un accord-cadre</td><td>${coche(ac,true)} oui &nbsp; ${coche(ac,false)} non</td></tr>
-      <tr><td class="k">Lieu des travaux</td><td>${esc(c.adresse||"")}</td></tr>
-      <tr><td class="k">Code postal</td><td class="mono">${esc(cp(c.adresse))}</td></tr>
-      <tr><td class="k">Date de début des travaux</td><td>${esc(c.date_debut||"")}</td></tr>
-      <tr><td class="k">Date de fin des travaux</td><td>${esc(c.date_fin||"")}</td></tr>
-      <tr><td class="k">Montant total HT des travaux de l'entreprise</td><td class="mono">${esc(euros(c.montant_ht))}</td></tr>
-      <tr><td class="k">Ces travaux ont-ils été sous-traités</td><td>${coche(st,true)} oui &nbsp; ${coche(st,false)} non</td></tr>
-      <tr><td class="k">Si oui, montant HT des travaux sous-traités</td><td class="mono">${st?esc(euros(c.montant_st)):""}</td></tr>
-      <tr><td class="k">Nature des travaux sous-traités</td><td>${esc(st?(c.nature_st||""):"Sans objet")}</td></tr>
-      <tr><td class="k">Description des travaux réalisés par l'entreprise hors sous-traitance et quantités mises en œuvre</td><td class="desc">${esc(desc)}</td></tr>
-    </table>
-    <div class="fin">
-      <div>Les travaux ont été effectués selon les règles de l'art et menés régulièrement à bonne fin.</div>
-      <div><b>Signataire :</b> ${esc(e.nom)}${c.signataire?" — "+esc(c.signataire):""}</div>
-      <div><b>Date :</b> ${frDate(c.date_attestation||c.date_reception)}</div>
-      <div class="sigbox"></div>
+  const lignes=l.lignes_devis;
+  const dense=lignes.length>10, fs=dense?"10.5px":"11.5px";
+  const qte=v=>v==null?"":String(+v).replace(".",",");
+  const cut=s=>{ s=String(s||""); return s.length>150?s.slice(0,147)+"…":s; };
+  const K=(t)=>`<td style="width:36%;padding:5px 8px;border:1px solid #9aa6b5;background:#eef2f7;font-weight:600;vertical-align:top">${t}</td>`;
+  const V=(t,m)=>`<td style="padding:5px 8px;border:1px solid #9aa6b5;vertical-align:top${m?";font-family:'IBM Plex Mono',monospace":""}">${t}</td>`;
+  const box=(v)=>`<span style="display:inline-flex;align-items:center;gap:4px;margin-right:14px"><span style="display:inline-block;width:11px;height:11px;border:1.5px solid #333;text-align:center;line-height:9px;font-size:10px;font-weight:700">${v?"✕":""}</span>`;
+  const ouiNon=v=>`${box(v)}oui</span>${box(!v)}non</span>`;
+  const soc=[e.adresse,[e.code_postal,e.ville].filter(Boolean).join(" ")].filter(Boolean).join(", ");
+  const sign=(c.signataire||S.nomAffiche||"").split(/,\s*/);
+  return `<article class="attp" style="background:#fff;color:#111;font-family:Arial,Helvetica,sans-serif;font-size:${fs};line-height:1.35;display:flex;flex-direction:column;gap:10px">
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:16px;border-bottom:3px solid ${BLEU};padding-bottom:8px">
+      ${S.logo?`<img src="${S.logo}" alt="Logo ${esc(e.nom)}" style="max-height:52px;max-width:170px;object-fit:contain">`:`<b style="font-size:18px;color:${BLEU}">${esc(e.nom)}</b>`}
+      <div style="text-align:right;font-size:10px;color:#444;line-height:1.45"><b style="color:#111">${esc(e.nom)}</b>${e.forme_juridique?" – "+esc(e.forme_juridique):""}<br>${esc(soc)}${e.telephone?"<br>Tél. "+esc(e.telephone):""}${e.siret?" – SIRET "+esc(e.siret):""}</div>
     </div>
-    <div class="foot">FNTP/SIPE/BDH P2 MO12 V2-18/07/11</div>
+    <div style="text-align:center">
+      <div style="font-size:19px;font-weight:800;letter-spacing:.06em;color:${BLEU}">ATTESTATION DE TRAVAUX</div>
+      <div style="font-size:12px;font-weight:700;letter-spacing:.25em;margin-top:2px">ATTESTATION DE POSE</div>
+      <div style="font-size:12px;margin-top:4px;color:#333">Lot ${esc(l.numero)} – ${esc(l.designation)}</div>
+    </div>
+    <table style="width:100%;border-collapse:collapse">
+      <tr>${K("Entreprise")}${V(esc(e.nom))}</tr>
+      <tr>${K("Maître d'ouvrage")}${V(esc(c.maitre_ouvrage||""))}</tr>
+      <tr>${K("Maître d'œuvre")}${V(esc(c.maitre_oeuvre||""))}</tr>
+      <tr>${K("Désignation des travaux")}${V(esc(c.designation_travaux||c.nom))}</tr>
+      <tr>${K("Désignation de la pose")}${V(esc(l.designation))}</tr>
+      <tr>${K("Lieu des travaux")}${V(esc(c.adresse||"")+(cp(c.adresse)?"":""))}</tr>
+      <tr>${K("Code postal")}${V(esc(cp(c.adresse)),1)}</tr>
+      <tr>${K("Période des travaux")}${V(esc([c.date_debut,c.date_fin].filter(Boolean).join(" → ")))}</tr>
+      <tr>${K("Montant total HT des travaux de l'entreprise")}${V(esc(euros(c.montant_ht)),1)}</tr>
+      <tr>${K("S'agit-il d'un accord-cadre ?")}${V(ouiNon(ac))}</tr>
+      <tr>${K("Travaux sous-traités ?")}${V(ouiNon(st)+(st?` – montant HT : ${esc(euros(c.montant_st))} – nature : ${esc(c.nature_st||"")}`:""))}</tr>
+    </table>
+    <div style="font-weight:700;font-size:12px;color:${BLEU};margin-top:2px">Travaux réalisés par l'entreprise (hors sous-traitance) et quantités mises en œuvre</div>
+    <table style="width:100%;border-collapse:collapse">
+      <tr style="background:${BLEU};color:#fff;font-weight:700"><td style="padding:5px 8px;width:9%">N°</td><td style="padding:5px 8px">Désignation</td><td style="padding:5px 8px;width:13%;text-align:right">Quantité</td><td style="padding:5px 8px;width:9%">Unité</td></tr>
+      ${lignes.map((li,i)=>`<tr style="background:${i%2?"#f6f8fb":"#fff"}"><td style="padding:4px 8px;border-bottom:1px solid #d5dbe3;font-family:'IBM Plex Mono',monospace;color:${BLEU}">${esc(li.numero||"")}</td><td style="padding:4px 8px;border-bottom:1px solid #d5dbe3">${esc(cut(li.designation))}</td><td style="padding:4px 8px;border-bottom:1px solid #d5dbe3;text-align:right;font-family:'IBM Plex Mono',monospace">${qte(li.quantite)}</td><td style="padding:4px 8px;border-bottom:1px solid #d5dbe3">${esc(li.unite||"")}</td></tr>`).join("")}
+    </table>
+    <div style="display:flex;gap:12px;margin-top:4px">
+      <div style="flex:1;border:1px solid #9aa6b5;padding:9px 10px;display:flex;flex-direction:column;gap:5px">
+        <div>Nous attestons que les travaux ci-dessus ont été effectués selon les règles de l'art et menés régulièrement à bonne fin.</div>
+        <div>Fait à <b>${esc(e.ville||"")}</b>, le <b>${frDate(c.date_attestation||c.date_reception)}</b></div>
+        <div><b>${esc(sign[0]||"")}</b>${sign[1]?`<br>${esc(sign.slice(1).join(", "))}`:""}<br>${esc(e.nom)}</div>
+      </div>
+      <div style="width:42%;border:1px solid #9aa6b5;padding:6px 8px;min-height:96px;font-size:10px;color:#666">Signature et cachet de l'entreprise</div>
+    </div>
+    <div style="font-size:9px;color:#777;text-align:right">Modèle FNTP/SIPE/BDH P2 MO12 V2-18/07/11</div>
   </article>`;
 }
 
@@ -852,10 +861,10 @@ async function creerProduit({nom,dtu,four,mots,pieces}){
 }
 /* ===================== DOE COMPLET (PDF unique) ===================== */
 const A4W=794, A4H=1123;
-function pageHTML(inner, num, total){
+function pageHTML(inner, num, total, sansEntete){
   const e=S.ent, c=S.ch;
-  return `<div class="pg" style="width:${A4W}px;height:${A4H}px;box-sizing:border-box;padding:56px 60px 70px;background:#fff;color:#111;font-family:Arial,Helvetica,sans-serif;font-size:13px;line-height:1.45;position:relative;overflow:hidden">
-    <div style="display:flex;justify-content:space-between;align-items:flex-end;font-size:10.5px;color:#555;border-bottom:1px solid #999;padding-bottom:6px;margin-bottom:22px"><span style="display:flex;align-items:center;gap:8px">${S.logo?`<img src="${S.logo}" style="height:26px;max-width:110px;object-fit:contain">`:""}DOE — ${esc(e.nom)}</span><span>${esc(c.nom)}</span></div>
+  return `<div class="pg" style="width:${A4W}px;height:${A4H}px;box-sizing:border-box;padding:${sansEntete?"44px":"56px"} 60px 70px;background:#fff;color:#111;font-family:Arial,Helvetica,sans-serif;font-size:13px;line-height:1.45;position:relative;overflow:hidden">
+    ${sansEntete?"":`<div style="display:flex;justify-content:space-between;align-items:flex-end;font-size:10.5px;color:#555;border-bottom:1px solid #999;padding-bottom:6px;margin-bottom:22px"><span style="display:flex;align-items:center;gap:8px">${S.logo?`<img src="${S.logo}" style="height:26px;max-width:110px;object-fit:contain">`:""}DOE — ${esc(e.nom)}</span><span>${esc(c.nom)}</span></div>`}
     ${inner}
     <div style="position:absolute;left:60px;right:60px;bottom:28px;display:flex;justify-content:space-between;font-size:10px;color:#666;border-top:1px solid #bbb;padding-top:6px"><span>${esc(e.nom)}${e.siret?" – SIRET "+esc(e.siret):""}</span><span>Page ${num} sur ${total}</span></div>
   </div>`;
@@ -971,7 +980,7 @@ async function genererDOE(){
     ${ch.map(m=>`<tr>${TD(esc(m.lot))}${TD(esc(m.produit))}${TD(esc(m.four))}${TD(esc(m.dtu))}${TD(esc(m.docs))}</tr>`).join("")||`<tr>${TD("Aucun produit associé",null)}</tr>`}</table>`
     +(i===matChunks.length-1&&annexPdfs.length>22?`<div style="height:16px"></div>${H2("Liste des annexes")}${annexPdfs.map((a,j)=>`<div style="font-size:11px">Annexe ${j+1} — ${esc(a.titre)} … p. ${a.debut}</div>`).join("")}`:""),pMat+i,total)));
   S.lots.forEach((l,i)=>{ const tmp=document.createElement("div"); tmp.innerHTML=attestationPose(l); const a=tmp.firstElementChild; a.style.border="0"; a.style.padding="0"; a.style.background="#fff";
-    pages.push(pageHTML(`<div style="font-size:11px;color:#555;margin-bottom:6px">C. Attestations de pose — lot ${esc(l.numero)}</div>`+a.outerHTML,pAtt+i,total)); });
+    pages.push(pageHTML(a.outerHTML,pAtt+i,total,true)); });
   photoPages.forEach((pp,i)=>pages.push(pageHTML(H2(`${photoPages.length?"D":""}. Photos — lot ${esc(pp.l.numero)} ${esc(pp.l.designation)}`)
     +`<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">${pp.ph.map(x=>`<img crossorigin="anonymous" src="${esc(x.url)}" style="width:100%;height:290px;object-fit:cover;border:1px solid #ccc">`).join("")}</div>`,pPhoto+i,total)));
 
