@@ -179,6 +179,8 @@ details summary{cursor:pointer;font-weight:600;color:var(--accent)}
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script>
 /* ===================== CONFIG ===================== */
 const SB_URL = "https://ngsokjiivtukcnpkggtz.supabase.co";
@@ -237,32 +239,54 @@ function messageErreur(e){
 }
 async function busy(btn, fn){ if(btn) btn.disabled=true; try{ await fn(); } catch(e){} finally{ if(btn) btn.disabled=false; } }
 
-/* Reconnaissance produit : le mot-clé qui apparaît le plus tôt dans la désignation gagne */
+/* Reconnaissance produit d'après la désignation de la ligne de devis
+   1) mots-clés du produit (mot entier, pluriels et tirets ignorés) : le plus tôt dans la désignation gagne, puis le plus long
+   2) sinon : suite d'au moins 2 mots du nom du produit présente dans la désignation (« Liberty Original 55 », « plinthe PVC »…) */
+const VIDES=new Set(["de","du","des","la","le","les","et","en","a","au","aux","pour","sur","avec","type","dim","y","compris","l","d","un","une"]);
+const motsN=s=>norm(s).replace(/\([^)]*\)/g," ").replace(/[^a-z0-9²]+/g," ").trim().split(/\s+/).filter(w=>w&&!VIDES.has(w)).map(w=>w.length>3?w.replace(/(s|x)$/,""):w);
+const GENERIQUES=new Set("fourniture pose cloison porte plinthe peinture dalle bloc plafond faux sol mur doublage plaque ossature isolation laine verre roche fiche technique produit standard std blanc blanche fixe simple double vitre vitree alu aluminium bois pvc acier enduit joint bande rail montant chassis resine revetement mise oeuvre panneau gamme notice".split(" "));
 function matchProduit(des){
-  const d=norm(des); let best=null, pos=Infinity, len=0;
-  if(/^(demolition|depose|curage|nettoyage|installation de chantier)/.test(d)) return null;
-  S.produits.forEach(p=>(p.mots_cles||[]).forEach(k=>{ const nk=norm(k); const i=d.indexOf(nk);
-    if(i>=0 && (i<pos || (i===pos && nk.length>len))){ pos=i; len=nk.length; best=p; } }));
-  return best;
+  const d=norm(des);
+  if(/^(demolition|depose|curage|nettoyage|installation de chantier|evacuation|benne|protection|location)/.test(d)) return null;
+  const D=" "+motsN(des).join(" ")+" ";
+  let best=null, pos=Infinity, len=0;
+  S.produits.forEach(p=>(p.mots_cles||[]).forEach(k=>{ const K=motsN(k).join(" "); if(!K) return; const i=D.indexOf(" "+K+" ");
+    if(i>=0 && (i<pos || (i===pos && K.length>len))){ pos=i; len=K.length; best=p; } }));
+  if(best) return best;
+  let score=0, ex=false; best=null;
+  S.produits.forEach(p=>{
+    const W=motsN(p.nom).filter(w=>!VIDES.has(w)); let top=0;
+    for(let a=0;a<W.length;a++) for(let b=a+2;b<=W.length;b++){ const seq=W.slice(a,b); if(D.includes(" "+seq.join(" ")+" ")) top=Math.max(top,seq.length); }
+    if(top>=2){ if(top>score){ score=top; best=p; ex=false; } else if(top===score) ex=true; }
+  });
+  if(best) return ex?null:best;
+  // 3) un mot rare du nom (marque ou gamme : Tonga, Ekla, Taralay…) présent dans un seul produit
+  const freq={}; S.produits.forEach(p=>new Set(motsN(p.nom)).forEach(w=>freq[w]=(freq[w]||0)+1));
+  const cands=S.produits.filter(p=>motsN(p.nom).some(w=>w.length>=4&&!/^\d+$/.test(w)&&!GENERIQUES.has(w)&&freq[w]===1&&D.includes(" "+w+" ")));
+  return cands.length===1?cands[0]:null;
 }
 /* Lecture du devis collé (Excel, Obat…) : colonnes repérées par l'en-tête, sinon devinées ligne par ligne */
 const RE_UNITE=/^(m²|m2|m³|m3|ml|m|u|un|unité|unite|ens|ensemble|ft|forfait|fft|kg|t|l|h|j|pce|pièce|piece|pm|lot|m\.l\.|mètre|metre)\.?$/i;
 const RE_NUM=/^\d+(\.\d+)*\.?$/;
-const nombre=s=>{ s=String(s||"").replace(/\s|€|HT/gi,"").replace(",","."); return s!==""&&!isNaN(s)?Number(s):null; };
+const nombre=s=>{ s=String(s||""); if(/€|%/.test(s)) return null; s=s.replace(/\s/g,"").replace(",","."); return s!==""&&!isNaN(s)?Number(s):null; };
+const RE_QU=/^(\d[\d\s.,]*)\s+(m²|m2|m³|m3|ml|m|u|un|ens|ft|forfait|fft|kg|t|l|h|j|pce|pm|lot)\.?$/i;
 function parseDevis(txt){
-  const rows=txt.split(/\r?\n/).map(r=>r.split(/\t|;/).map(x=>(x||"").trim())).filter(r=>r.some(Boolean));
+  // cellule « 153,82 m² » (PDF) → deux cellules quantité / unité
+  const rows=txt.split(/\r?\n/).map(r=>r.split(/\t|;/).map(x=>(x||"").trim()).flatMap(c=>{ const m=c.match(RE_QU); return m?[m[1].trim(),m[2]]:[c]; })).filter(r=>r.some(Boolean));
   // 1. En-tête : colonnes nommées
   let map=null;
   const hi=rows.findIndex(r=>r.some(c=>/d[ée]signation|libell[ée]|description/i.test(c)));
-  if(hi>=0 && hi<5){
+  if(hi>=0 && hi<60){
     const H=rows[hi].map(c=>norm(c));
     const f=re=>H.findIndex(c=>re.test(c));
     map={n:f(/^(n°?|no|num|numero|ref|item|code|poste)$|^n[°o]/),des:f(/designation|libelle|description/),u:f(/^(u|unite|un|uv)$|unite/),q:f(/^(q|qte|quantite|qt)\.?$|quantite|qte/)};
-    if(map.des<0) map=null;
+    if(map.des<0 || map.q<0 || map.u===map.q || rows[hi].length!==Math.max(...rows.slice(hi+1,hi+6).map(r=>r.length),0)) map=null;
   }
-  const lots=[]; let cur=null, auto=0;
+  const lots=[]; let cur=null, auto=0, last=null;
+  const numerote=rows.filter(r=>RE_NUM.test(r[0]||"")).length>=3;
+  const PARASITE=/siret|r\.?c\.?s|capital|iban|bic\b|page\s*\d|t[ée]l\.?\s*:|www\.|@|net [àa] payer|bon pour accord|signature|conditions de|acompte|garantie d[ée]cennale|couverture :/i;
   rows.forEach((r,ri)=>{
-    if(map && ri<=hi) return;
+    if(hi>=0 && hi<60 && ri<=hi) return;
     let n="",des="",u="",q=null;
     if(map){
       n=map.n>=0?r[map.n]||"":""; des=r[map.des]||""; u=map.u>=0?r[map.u]||"":""; q=map.q>=0?nombre(r[map.q]):null;
@@ -278,14 +302,42 @@ function parseDevis(txt){
       const nums=cells.filter(x=>x!==num&&x.k>d.k&&nombre(x.c)!==null);
       q=nums.length?nombre(nums[0].c):null;
     }
-    if(!des || /^(total|sous-total|montant|tva|net a payer)/i.test(norm(des))) return;
+    if(!des || /^(total|sous-total|montant|tva|net a payer|designation)/i.test(norm(des)) || PARASITE.test(r.join(" "))) return;
     const estTitre=!u && q===null;
-    if(estTitre){ cur={numero:n||String(lots.length+1),designation:des,lignes:[]}; lots.push(cur); return; }
+    // Désignation sur plusieurs lignes (PDF) : une ligne sans n°, sans unité ni quantité prolonge la précédente
+    if(estTitre && numerote && !n && last){ last.designation+=" "+des; return; }
+    if(estTitre){ cur={numero:n||String(lots.length+1),designation:des,lignes:[]}; lots.push(cur); last=null; return; }
     if(!cur){ cur={numero:"1",designation:"Travaux",lignes:[]}; lots.push(cur); }
     auto++;
-    cur.lignes.push({numero:n||`${cur.numero}.${cur.lignes.length+1}`,designation:des,unite:u,quantite:q});
+    last={numero:n||`${cur.numero}.${cur.lignes.length+1}`,designation:des,unite:u,quantite:q};
+    cur.lignes.push(last);
   });
   return lots.filter(l=>l.lignes.length);
+}
+
+/* Fichier devis → texte à colonnes séparées par tabulation */
+async function fichierDevisEnTexte(f){
+  const ext=(f.name.split(".").pop()||"").toLowerCase();
+  if(ext==="pdf"){
+    if(!window.pdfjsLib) throw new Error("lecteur PDF non chargé, recharge la page");
+    pdfjsLib.GlobalWorkerOptions.workerSrc="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
+    const pdf=await pdfjsLib.getDocument({data:await f.arrayBuffer()}).promise; const out=[];
+    for(let p=1;p<=pdf.numPages;p++){
+      const tc=await (await pdf.getPage(p)).getTextContent();
+      const items=tc.items.filter(i=>i.str.trim()).map(i=>({s:i.str.trim(),x:i.transform[4],y:i.transform[5],w:i.width}));
+      items.sort((a,b)=>b.y-a.y||a.x-b.x);
+      const lignes=[]; items.forEach(i=>{ const L=lignes.find(l=>Math.abs(l.y-i.y)<3); if(L) L.it.push(i); else lignes.push({y:i.y,it:[i]}); });
+      lignes.sort((a,b)=>b.y-a.y).forEach(l=>{ l.it.sort((a,b)=>a.x-b.x); let t="", fin=null;
+        l.it.forEach(i=>{ if(fin===null) t=i.s; else t+=(i.x-fin>9?"\t":" ")+i.s; fin=i.x+i.w; }); out.push(t); });
+    }
+    return out.join("\n");
+  }
+  if(ext==="xlsx"||ext==="xls"){
+    if(!window.XLSX) throw new Error("lecteur Excel non chargé, recharge la page");
+    const wb=XLSX.read(await f.arrayBuffer(),{type:"array"});
+    return XLSX.utils.sheet_to_csv(wb.Sheets[wb.SheetNames[0]],{FS:"\t",blankrows:false});
+  }
+  return await f.text();
 }
 
 /* ===================== CHARGEMENTS ===================== */
@@ -441,6 +493,7 @@ function tabDevis(){
       <h2>Import du devis</h2>
       <div class="hint">Copie le tableau de ton devis depuis Excel ou Obat (avec la ligne d'en-tête si possible : Désignation, Quantité, Unité…) et colle-le ici. L'ordre des colonnes n'a pas d'importance. Une ligne sans unité ni quantité devient un titre de lot ; les lignes Total / TVA sont ignorées.</div>
       ${S.produits.length?"":`<div class="confirm" style="background:var(--warn-soft)">Ta bibliothèque est vide : aucun produit ne sera reconnu. <button class="link" data-act="biblio">Ouvrir la bibliothèque</button></div>`}
+      <div class="row"><label class="btn ghost" for="devis-file" style="position:relative">Importer un fichier (PDF, Excel, CSV)<input type="file" id="devis-file" accept=".pdf,.xlsx,.xls,.csv,.txt" style="position:absolute;width:1px;height:1px;opacity:0;left:0;top:0"></label><span class="hint">ou colle les lignes ci-dessous</span></div>
       <textarea id="devis" spellcheck="false" placeholder="Colle ici les lignes de ton devis…"></textarea>
       <div class="row"><button class="btn" data-act="import">Importer le devis</button><button class="btn ghost" data-act="exemple">Coller l'exemple</button></div>
     </div>`;
@@ -453,7 +506,7 @@ function tabDevis(){
       <div class="hint">Calculé avec tes prix d'achat (page Prix) quand l'unité de la ligne correspond à celle du prix. Hors chutes, petites fournitures et transport.</div>`}
       ${S.confirmReplace?`<div class="confirm">Remplacer le devis supprime les lots, lignes et photos de ce chantier. Les documents de la bibliothèque sont conservés.
         <div class="row"><button class="btn danger small" data-act="replace-yes">Supprimer et réimporter</button><button class="btn ghost small" data-act="replace-no">Annuler</button></div></div>`
-        :`<div class="row"><button class="btn ghost small" data-act="replace">Remplacer le devis</button></div>`}
+        :`<div class="row"><button class="btn small" data-act="rematch">Associer automatiquement les produits</button><button class="btn ghost small" data-act="replace">Remplacer le devis</button></div>`}
     </div>
     ${S.lots.map(l=>`<article class="lot"><header><h3><span class="num">${esc(l.numero)}</span>${esc(l.designation)}</h3></header>
       ${l.lignes_devis.map(li=>`<div class="item">
@@ -1262,6 +1315,12 @@ document.addEventListener("click",async e=>{
     else if(a==="tab"){ S.tab=b.dataset.tab; render(); window.scrollTo({top:0}); }
     else if(a==="exemple"){ $("#devis").value=EXEMPLE_DEVIS; }
     else if(a==="import") await busy(b,importDevis);
+    else if(a==="rematch") await busy(b,async()=>{
+      await loadBiblio(); let n=0;
+      for(const l of S.lots) for(const li of l.lignes_devis){ if(li.produit_id) continue; const p=matchProduit(li.designation);
+        if(p){ await q(sb.from("lignes_devis").update({produit_id:p.id}).eq("id",li.id)); n++; } }
+      await loadChantierData(); render(); toast(n?`${n} ligne(s) associée(s) à un produit de la bibliothèque`:"Aucun nouveau produit reconnu : associe-les à la main ou ajoute des mots-clés");
+    });
     else if(a==="replace"){ S.confirmReplace=true; render(); }
     else if(a==="replace-no"){ S.confirmReplace=false; render(); }
     else if(a==="replace-yes") await busy(b,replaceDevis);
@@ -1303,6 +1362,13 @@ document.addEventListener("change",async e=>{
   try{
     if(t.id==="bulk-files") await importGroupe(t);
     else if(t.id==="logo-file") await uploadLogo(t);
+    else if(t.id==="devis-file"){
+      const f=t.files[0]; if(!f) return;
+      try{ toast("Lecture du fichier…"); const txt=await fichierDevisEnTexte(f);
+        const lots=parseDevis(txt); $("#devis").value=txt;
+        toast(lots.length?`${lots.length} lot(s), ${lots.reduce((a,l)=>a+l.lignes.length,0)} ligne(s) reconnues : vérifie puis clique sur Importer`:"Aucune ligne reconnue dans ce fichier : envoie-le moi pour que j'adapte la lecture");
+      }catch(err){ toast("Fichier illisible : "+(err.message||err)); }
+    }
     else if(t.id==="cover-file") await uploadCover(t);
     else if(t.id==="prix-fam"){ S.prixFam=t.value; render(); }
     else if(t.matches("input[data-prix]")){
