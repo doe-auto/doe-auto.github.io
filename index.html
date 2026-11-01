@@ -244,10 +244,18 @@ async function busy(btn, fn){ if(btn) btn.disabled=true; try{ await fn(); } catc
    2) sinon : suite d'au moins 2 mots du nom du produit présente dans la désignation (« Liberty Original 55 », « plinthe PVC »…) */
 const VIDES=new Set(["de","du","des","la","le","les","et","en","a","au","aux","pour","sur","avec","type","dim","y","compris","l","d","un","une"]);
 const motsN=s=>norm(s).replace(/\([^)]*\)/g," ").replace(/[^a-z0-9²]+/g," ").trim().split(/\s+/).filter(w=>w&&!VIDES.has(w)).map(w=>w.length>3?w.replace(/(s|x)$/,""):w);
-const GENERIQUES=new Set("fourniture pose cloison porte plinthe peinture dalle bloc plafond faux sol mur doublage plaque ossature isolation laine verre roche fiche technique produit standard std blanc blanche fixe simple double vitre vitree alu aluminium bois pvc acier enduit joint bande rail montant chassis resine revetement mise oeuvre panneau gamme notice".split(" "));
+/* Ligne de prestation (démolition, nettoyage, extincteurs, plans…) : jamais de fiche technique */
+function prestation(des){
+  const d=norm(des);
+  return /^(demolition|depose|curage|nettoyage|installation de chantier|evacuation|manutention|benne|protection|location|participation|frais|releve|reprise|dimensions?\b|localisation)/.test(d)
+    || /extincteur|plan d.?evacuation|signaletique|registre de securite|consignes? de securite|plan de prevention|dossier|etude|diagnostic|reception|nettoyage|deplacement/.test(d);
+}
 function matchProduit(des){
   const d=norm(des);
-  if(/^(demolition|depose|curage|nettoyage|installation de chantier|evacuation|benne|protection|location)/.test(d)) return null;
+  if(prestation(des)) return null;
+  if(/^(demolition|depose|curage|nettoyage|installation de chantier|evacuation|manutention|benne|protection|location|participation|frais|releve|reprise|dimensions?\b|localisation)/.test(d)) return null;
+  // prestations sans fiche technique : sécurité incendie, signalétique, documents, études
+  if(/extincteur|plan d.?evacuation|signaletique|registre de securite|consignes? de securite|plan de prevention|dossier|etude|diagnostic|reception|nettoyage|deplacement/.test(d)) return null;
   const D=" "+motsN(des).join(" ")+" ";
   let best=null, pos=Infinity, len=0;
   S.produits.forEach(p=>(p.mots_cles||[]).forEach(k=>{ const K=motsN(k).join(" "); if(!K) return; const i=D.indexOf(" "+K+" ");
@@ -259,11 +267,7 @@ function matchProduit(des){
     for(let a=0;a<W.length;a++) for(let b=a+2;b<=W.length;b++){ const seq=W.slice(a,b); if(D.includes(" "+seq.join(" ")+" ")) top=Math.max(top,seq.length); }
     if(top>=2){ if(top>score){ score=top; best=p; ex=false; } else if(top===score) ex=true; }
   });
-  if(best) return ex?null:best;
-  // 3) un mot rare du nom (marque ou gamme : Tonga, Ekla, Taralay…) présent dans un seul produit
-  const freq={}; S.produits.forEach(p=>new Set(motsN(p.nom)).forEach(w=>freq[w]=(freq[w]||0)+1));
-  const cands=S.produits.filter(p=>motsN(p.nom).some(w=>w.length>=4&&!/^\d+$/.test(w)&&!GENERIQUES.has(w)&&freq[w]===1&&D.includes(" "+w+" ")));
-  return cands.length===1?cands[0]:null;
+  return ex?null:best;
 }
 /* Lecture du devis collé (Excel, Obat…) : colonnes repérées par l'en-tête, sinon devinées ligne par ligne */
 const RE_UNITE=/^(m²|m2|m³|m3|ml|m|u|un|unité|unite|ens|ensemble|ft|forfait|fft|kg|t|l|h|j|pce|pièce|piece|pm|lot|m\.l\.|mètre|metre)\.?$/i;
@@ -807,7 +811,8 @@ async function reparerEtAssocier(){
       if(/[a-zà-ÿ]{3}/i.test(li.numero||"") && !/[a-zà-ÿ]{3}/i.test(li.designation||"")){
         upd.designation=li.numero; const qn=nombre(li.designation); if(qn!==null) upd.quantite=qn; upd.numero=`${l.numero}.${k}`; corr++; }
       const des=upd.designation||li.designation;
-      if(!li.produit_id){ const p=matchProduit(des); if(p){ upd.produit_id=p.id; asso++; } }
+      if(li.produit_id && prestation(des)) upd.produit_id=null;
+      else if(!li.produit_id){ const p=matchProduit(des); if(p){ upd.produit_id=p.id; asso++; } }
       if(Object.keys(upd).length) await q(sb.from("lignes_devis").update(upd).eq("id",li.id));
     }
   }
