@@ -896,15 +896,24 @@ function viewBiblio(){
         <label class="f">Pièces exigées (séparées par des virgules)<input type="text" id="p-pieces" value="Fiche technique"></label>
         <button class="btn" type="submit">Ajouter le produit</button>
       </form></details>
-    <div class="list">${S.produits.map(p=>`<article class="lot">
-      <header><h3 style="min-width:0">${esc(p.nom)}</h3><span class="badge">${esc(p.dtu||"sans DTU")}${p.fournisseurs?" · "+esc(p.fournisseurs.nom):""}</span></header>
-      <div class="item"><div class="prod">Mots-clés : <span class="mono">${esc((p.mots_cles||[]).join(", ")||"—")}</span></div></div>
+    <div class="row"><input type="text" id="bib-q" placeholder="Chercher un produit, une marque, un mot-clé…" value="${esc(S.bibQ||"")}" style="flex:1 1 260px"></div>
+    <div class="list">${S.produits.filter(p=>!S.bibQ||norm([p.nom,(p.mots_cles||[]).join(" "),p.fournisseurs?.nom].join(" ")).includes(norm(S.bibQ))).map(p=>`<article class="lot">
+      <header><h3 style="min-width:0">${esc(p.nom)}</h3><span class="row"><span class="badge">${esc(p.dtu||"sans DTU")}${p.fournisseurs?" · "+esc(p.fournisseurs.nom):""}</span>
+        <button class="link" data-act="prod-edit" data-id="${p.id}">Modifier</button>
+        ${S.prodDel===p.id?`<button class="btn danger small" data-act="prod-del-yes" data-id="${p.id}">Supprimer le produit et ses documents</button><button class="btn ghost small" data-act="prod-del-no">Annuler</button>`:`<button class="link" data-act="prod-del" data-id="${p.id}" style="color:var(--bad)">Supprimer</button>`}</span></header>
+      ${S.prodEdit===p.id?`<form class="item" data-form="prod-edit" data-id="${p.id}" style="gap:10px">
+        <div class="grid2"><label class="f">Nom du produit<input type="text" id="pe-nom" value="${esc(p.nom)}" required></label>
+          <label class="f">DTU<input type="text" id="pe-dtu" value="${esc(p.dtu||"")}"></label></div>
+        <label class="f">Mots-clés du devis (séparés par des virgules)<input type="text" id="pe-mots" value="${esc((p.mots_cles||[]).join(", "))}"></label>
+        <div class="row"><button class="btn small" type="submit">Enregistrer</button><button class="btn ghost small" type="button" data-act="prod-edit-no">Annuler</button></div>
+      </form>`:`<div class="item"><div class="prod">Mots-clés : <span class="mono">${esc((p.mots_cles||[]).join(", ")||"—")}</span></div></div>`}
       ${p.pieces_requises.map(r=>{ const d=r.documents.slice().sort((a,b)=>b.created_at.localeCompare(a.created_at))[0]; return `<div class="item"><div class="row between">
         <div style="min-width:0"><div>${esc(r.libelle)}</div><div class="hint mono" style="overflow-wrap:anywhere">${d?esc(d.nom_fichier)+" · "+new Date(d.created_at).toLocaleDateString("fr-FR"):"Aucun document"}</div></div>
         <div class="chips">${d?`<button class="chip ok" data-act="opendoc" data-path="${esc(d.storage_path)}">Ouvrir</button>`:""}
-          <label class="up" for="lib-${r.id}">${d?"Remplacer":"+ Ajouter le PDF"}<input type="file" id="lib-${r.id}" accept=".pdf,image/*" data-piece="${r.id}" data-produit="${p.id}"></label></div>
+          <label class="up" for="lib-${r.id}">${d?"Remplacer":"+ Ajouter le PDF"}<input type="file" id="lib-${r.id}" accept=".pdf,image/*" data-piece="${r.id}" data-produit="${p.id}"></label>
+          ${S.pieceDel===r.id?`<button class="btn danger small" data-act="piece-del-yes" data-id="${r.id}">Confirmer</button><button class="btn ghost small" data-act="piece-del-no">Annuler</button>`:`<button class="link" data-act="piece-del" data-id="${r.id}" style="color:var(--bad)" aria-label="Supprimer ${esc(r.libelle)}">Supprimer</button>`}</div>
       </div></div>`;}).join("")}
-    </article>`).join("")}</div>
+    </article>`).join("")||`<div class="empty">Aucun produit ne correspond.</div>`}</div>
   </section>`;
 }
 
@@ -1425,12 +1434,31 @@ document.addEventListener("click",async e=>{
       await q(sb.from("doe_exports").delete().eq("id",b.dataset.id));
       S.expDel=null; await loadChantierData(); render(); toast("DOE supprimé");
     });
+    else if(a==="prod-edit"){ S.prodEdit=b.dataset.id; render(); }
+    else if(a==="prod-edit-no"){ S.prodEdit=null; render(); }
+    else if(a==="prod-del"){ S.prodDel=b.dataset.id; render(); }
+    else if(a==="prod-del-no"){ S.prodDel=null; render(); }
+    else if(a==="prod-del-yes") await busy(b,async()=>{
+      const p=S.produits.find(x=>x.id===b.dataset.id); const paths=(p?.pieces_requises||[]).flatMap(r=>r.documents.map(d=>d.storage_path));
+      await q(sb.from("produits").delete().eq("id",b.dataset.id));
+      if(paths.length) await sb.storage.from("documents").remove(paths);
+      S.prodDel=null; await loadBiblio(); render(); toast("Produit supprimé");
+    });
+    else if(a==="piece-del"){ S.pieceDel=b.dataset.id; render(); }
+    else if(a==="piece-del-no"){ S.pieceDel=null; render(); }
+    else if(a==="piece-del-yes") await busy(b,async()=>{
+      const r=S.produits.flatMap(p=>p.pieces_requises).find(x=>x.id===b.dataset.id); const paths=(r?.documents||[]).map(d=>d.storage_path);
+      await q(sb.from("pieces_requises").delete().eq("id",b.dataset.id));
+      if(paths.length) await sb.storage.from("documents").remove(paths);
+      S.pieceDel=null; await loadBiblio(); render(); toast("Document supprimé");
+    });
     else if(a==="send-doe"){ S.sendId=b.dataset.id; render(); const t=$("#env-to"); if(t) t.focus(); }
     else if(a==="send-cancel"){ S.sendId=null; render(); }
     else if(a==="cover-pick") await busy(b,()=>setCover(b.dataset.path));
   }catch(err){}
 });
 document.addEventListener("input",e=>{
+  if(e.target.id==="bib-q"){ S.bibQ=e.target.value; const pos=e.target.selectionStart; render(); const el=$("#bib-q"); if(el){ el.focus(); try{ el.setSelectionRange(pos,pos); }catch(_){} } return; }
   if(e.target.id!=="prix-q") return;
   S.prixQ=e.target.value; const pos=e.target.selectionStart; render();
   const el=$("#prix-q"); if(el){ el.focus(); try{ el.setSelectionRange(pos,pos); }catch(_){} }
@@ -1558,6 +1586,11 @@ document.addEventListener("submit",async e=>{
       await q(sb.from("prix_achat").insert({entreprise_id:S.ent.id,famille:$("#np-fam").value,designation:$("#np-des").value.trim(),marque:$("#np-marque").value.trim()||null,
         unite:$("#np-unite").value.trim()||null,prix_ht:n,fournisseur:$("#np-four").value.trim()||null,date_prix:n!=null?new Date().toISOString().slice(0,10):null}));
       await loadPrix(); render(); toast("Prix ajouté");
+    }
+    if(k==="prod-edit"){
+      const mots=$("#pe-mots").value.split(",").map(x=>norm(x.trim())).filter(Boolean);
+      await q(sb.from("produits").update({nom:$("#pe-nom").value.trim(),dtu:$("#pe-dtu").value.trim()||null,mots_cles:mots}).eq("id",f.dataset.id));
+      S.prodEdit=null; await loadBiblio(); render(); toast("Produit modifié");
     }
     if(k==="produit"){
       const split=v=>v.split(",").map(x=>x.trim()).filter(Boolean);
