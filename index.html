@@ -209,6 +209,7 @@ function messageErreur(e){
   if(/Email not confirmed/i.test(m)) return "Confirme d'abord ton e-mail (lien reçu par mail).";
   if(/permission denied/i.test(m)) return "Accès refusé par la base : vérifie les droits (voir la notice).";
   if(/row-level security/i.test(m)) return "Action refusée : cet élément n'appartient pas à ton entreprise.";
+  if(/sans_fiche/i.test(m)) return "La base n'est pas à jour : lance maj-lignes.sql dans Supabase.";
   if(/supprimer_(produit|piece)/i.test(m)) return "La base n'est pas à jour : lance supprimer-produit.sql dans Supabase.";
   if(/schema cache|column .* does not exist/i.test(m)) return "La base n'est pas à jour : lance maj-entreprise.sql dans Supabase.";
   return m;
@@ -216,10 +217,17 @@ function messageErreur(e){
 async function busy(btn, fn){ if(btn) btn.disabled=true; try{ await fn(); } catch(e){} finally{ if(btn) btn.disabled=false; } }
 
 /* Reconnaissance produit : le mot-clé qui apparaît le plus tôt dans la désignation gagne */
+const MOTS_VIDES=new Set("avec pour dans sans sous entre compris fourniture pose mise oeuvre ensemble type selon toute hauteur fiche technique produit produits les des une sur par".split(" "));
+const motsUtiles=t=>norm(t).replace(/[^a-z0-9/]+/g," ").split(" ").filter(w=>w.length>=4&&!MOTS_VIDES.has(w)||/\d/.test(w)&&w.length>=3||MOTS_COURTS.has(w));
+const MOTS_COURTS=new Set("wc pvc vmc led mdf osb pse ba hpl".split(" "));
 function matchProduit(des){
   const d=norm(des); let best=null, pos=Infinity;
-  S.produits.forEach(p=>(p.mots_cles||[]).forEach(k=>{ const i=d.indexOf(norm(k)); if(i>=0 && i<pos){ pos=i; best=p; } }));
-  return best;
+  S.produits.forEach(p=>(p.mots_cles||[]).forEach(k=>{ const i=d.indexOf(norm(k)); if(k && i>=0 && i<pos){ pos=i; best=p; } }));
+  if(best) return best;
+  // Sinon : mots du nom du produit retrouvés dans la ligne (une marque compte double), au moins 2 points
+  const md=new Set(motsUtiles(des)); let score=0;
+  S.produits.forEach(p=>{ let sc=0; new Set(motsUtiles(p.nom)).forEach(w=>{ if(md.has(w)) sc+=MARQUES[w]?2:1; }); if(sc>score){ score=sc; best=p; } });
+  return score>=2?best:null;
 }
 function parseDevis(txt){
   const lots=[]; let cur=null;
@@ -237,8 +245,8 @@ function parseDevis(txt){
 
 /* ===================== INTITULÉS HARMONISÉS ===================== */
 /* Affichage seulement : la base garde le texte d'origine. Sigles en capitales, marques avec leur graphie, le reste en minuscules, première lettre en capitale. */
-const SIGLES=new Set("pv ft fds fdes dtu pse pvc mdf acermi upec ce nf ei rei cf tlp lvt osb hpl ba sti stil ral ts atec dta avis".split(" "));
-const MARQUES={siniat:"Siniat",placo:"Placo",placoplatre:"Placoplâtre",knauf:"Knauf",isover:"Isover",rockwool:"Rockwool",ursa:"Ursa",gerflor:"Gerflor",tarkett:"Tarkett",forbo:"Forbo",tiaso:"Tiaso",udirev:"Udirev",maestria:"Maestria",aqualine:"Aqualine",unistop:"Unistop",seigneurie:"Seigneurie",tollens:"Tollens",zolpan:"Zolpan",sikkens:"Sikkens",weber:"Weber",mapei:"Mapei",armstrong:"Armstrong",ecophon:"Ecophon",rockfon:"Rockfon",eurocoustic:"Eurocoustic",liberty:"Liberty",original:"Original",evo:"Evo",aqua:"Aqua",reguini:"Reguini",stil:"Stil"};
+const SIGLES=new Set("pv ft fds fdes dtu pse pvc mdf acermi upec ce nf ei rei cf wc vmc led tlp lvt osb hpl ba sti stil ral ts atec dta avis".split(" "));
+const MARQUES={siniat:"Siniat",placo:"Placo",placoplatre:"Placoplâtre",knauf:"Knauf",isover:"Isover",rockwool:"Rockwool",ursa:"Ursa",gerflor:"Gerflor",tarkett:"Tarkett",forbo:"Forbo",tiaso:"Tiaso",udirev:"Udirev",maestria:"Maestria",aqualine:"Aqualine",unistop:"Unistop",seigneurie:"Seigneurie",unikalo:"Unikalo",tollens:"Tollens",zolpan:"Zolpan",sikkens:"Sikkens",weber:"Weber",mapei:"Mapei",armstrong:"Armstrong",ecophon:"Ecophon",rockfon:"Rockfon",eurocoustic:"Eurocoustic",liberty:"Liberty",original:"Original",evo:"Evo",aqua:"Aqua",reguini:"Reguini",stil:"Stil"};
 const MOTS_COURANTS=new Set(("fiche fiches technique techniques produit produits plaque plaques plâtre platre cloison cloisons doublage isolant isolation porte portes bloc bloc-porte peinture peintures plinthe plinthes sol sols revêtement revetement dalle dalles ossature ossatures enduit enduits joint joints bande bandes laine minérale minerale verre roche feu acoustique de du des la le les l d et en à a pour sur avec sans intérieur interieur intérieure extérieur mate satin velours vitrée vitree alu aluminium châssis chassis cadre stratifié stratifie strat résine resine ferme-porte ferme-portes notice pose certificat classement entretien données donnees sécurité securite résistance resistance réaction reaction procès-verbal proces verbal rail rails montant montants fourrure fourrures cornière corniere vis colle mortier ragréage ragreage primaire impression sous-couche finition demi environnementale sanitaire déclaration declaration performance performances haute hydro hydrofuge phonique thermique").split(" "));
 function harmoniser(txt){
   const t=String(txt||"").replace(/\s+/g," ").trim(); if(!t) return t;
@@ -453,8 +461,14 @@ function stats(){
   const p=S.rows.filter(r=>r.piece_requise_id); const c={en_bibliotheque:0,expiree:0,demandee:0,manquante:0};
   p.forEach(r=>c[r.statut]++);
   const photoLots=S.lots.filter(l=>(S.photos[l.id]||[]).length).length;
-  const total=p.length+S.lots.length;
-  return {...c,photoLots,total:p.length,pct: total?Math.round((c.en_bibliotheque+photoLots)/total*100):0};
+  const orphelines=lignesSansFiche().length;
+  const total=p.length+S.lots.length+orphelines;
+  return {...c,photoLots,orphelines,total:p.length,pct: total?Math.round((c.en_bibliotheque+photoLots)/total*100):0};
+}
+/* Lignes qui n'ont aucune fiche en face : pas de produit associé, ou produit sans pièce exigée */
+function lignesSansFiche(){
+  const byL=rowsByLigne();
+  return S.lots.flatMap(l=>l.lignes_devis.filter(li=>!li.sans_fiche && (!li.produit_id || !(byL[li.id]||[]).some(r=>r.piece_requise_id))).map(li=>({...li,lot:l})));
 }
 function rowsByLigne(){ const m={}; S.rows.forEach(r=>{ (m[r.ligne_id]=m[r.ligne_id]||[]).push(r); }); return m; }
 
@@ -468,6 +482,7 @@ function tabPieces(){
       <div class="stats"><span><b>${s.en_bibliotheque}</b> jointes</span><span><b>${s.demandee}</b> demandées</span><span><b>${s.manquante+s.expiree}</b> manquantes ou expirées</span><span><b>${s.photoLots}/${S.lots.length}</b> lots photographiés</span></div>
       <div class="hint">Un PDF ajouté ici entre dans la bibliothèque et sera repris sur tous tes prochains chantiers.</div>
     </div>
+    ${blocControle()}
     ${S.lots.map(l=>`<article class="lot">
       <header><h3><span class="num">${esc(l.numero)}</span>${esc(l.designation)}</h3>
         <div class="photos">${(S.photos[l.id]||[]).map(p=>`<img src="${esc(p.url||"")}" alt="Photo du lot ${esc(l.numero)}" loading="lazy">`).join("")}
@@ -479,10 +494,45 @@ function tabPieces(){
           <div class="chips">${rs.map(r=> r.statut==="en_bibliotheque"
             ? `<button class="chip ok" data-act="opendoc" data-path="${esc(r.storage_path)}" title="Ouvrir le document">${esc(r.piece_libelle)}</button>`
             : `<span class="chip ${CLS[r.statut]}">${esc(r.piece_libelle)} · ${LBL[r.statut]}</span><label class="up" for="up-${li.id}-${r.piece_requise_id}">+ PDF<input type="file" id="up-${li.id}-${r.piece_requise_id}" accept=".pdf,image/*" data-piece="${r.piece_requise_id}" data-produit="${r.produit_id}"></label>`).join("") || `<span class="hint">Aucune pièce définie pour ce produit.</span>`}</div>`
-          :`<div class="hint">Aucun produit associé. <button class="link" data-act="tab" data-tab="devis">Associer dans l'onglet Devis</button></div>`}
+          : li.sans_fiche?`<div class="hint">Prestation sans fiche technique. <button class="link" data-act="ligne-fiche" data-id="${li.id}" data-v="0">Annuler</button></div>`
+          :`<div class="chips"><span class="chip bad">Aucune fiche en face</span><span class="hint">voir « Lignes sans fiche » en haut</span></div>`}
       </div>`;}).join("")}
     </article>`).join("")}`;
 }
+
+function blocControle(){
+  const ls=lignesSansFiche(), opts=S.produits.map(p=>`<option value="${p.id}">${esc(p.nom)}</option>`).join("");
+  if(!ls.length) return `<div class="box" style="border-color:var(--ok)"><div class="row between"><h2>Contrôle des fiches</h2><span class="chip ok">Chaque ligne a sa fiche</span></div></div>`;
+  return `<div class="box" style="border-color:var(--bad)" id="controle">
+    <div class="row between"><h2>Lignes sans fiche</h2><span class="chip bad">${ls.length} ligne${ls.length>1?"s":""} à traiter</span></div>
+    <div class="hint">Chaque ligne qui contient un produit doit avoir sa fiche technique ou son PV. Pour chaque ligne : choisis le produit de la bibliothèque, crée-le avec son PDF, ou indique que c'est une prestation sans produit (curage, nettoyage, main-d'œuvre…).</div>
+    ${ls.map(li=>`<div class="item" style="padding-inline:0">
+      <div class="t"><div><span class="num">${esc(li.numero)}</span>${esc(li.designation)}</div><span class="qty">${li.quantite??""} ${esc(li.unite||"")}</span></div>
+      ${li.produit_id?`<div class="hint">Le produit associé n'a aucune pièce exigée : ajoute-lui une fiche technique dans la Bibliothèque.</div>`:""}
+      <div class="row">
+        <select data-ligne="${li.id}" aria-label="Produit pour la ligne ${esc(li.numero)}" style="flex:1;min-width:180px"><option value="">Choisir un produit…</option>${opts}</select>
+        <button class="btn small" data-act="ligne-creer" data-id="${li.id}">+ Créer le produit</button>
+        <button class="btn ghost small" data-act="ligne-fiche" data-id="${li.id}" data-v="1">Prestation sans fiche</button>
+      </div>
+      ${S.creerPour===li.id?`<form data-form="creer-ligne" data-ligne="${li.id}" class="confirm" style="background:var(--accent-soft);margin-top:8px">
+        <div class="grid2">
+          <label class="f">Nom du produit<input type="text" id="cl-nom" required value="${esc(nomDepuisLigne(li.designation))}"></label>
+          <label class="f">Fournisseur<input type="text" id="cl-four" list="dl-four2" placeholder="Nom du fournisseur"></label>
+          <label class="f">Mots-clés pour les prochains devis<input type="text" id="cl-mots" value="${esc(motsDepuisLigne(li.designation))}"></label>
+          <label class="f">Type de pièce<select id="cl-type"><option>Fiche technique</option><option>PV feu</option><option>PV acoustique</option><option>PV</option><option>Notice de pose</option><option>FDS</option></select></label>
+        </div>
+        <datalist id="dl-four2">${S.fourn.map(f=>`<option value="${esc(f.nom)}">`).join("")}</datalist>
+        <label class="f">PDF de la fiche (facultatif, tu pourras l'ajouter plus tard)<input type="file" id="cl-pdf" accept=".pdf,image/*"></label>
+        <div class="row"><button class="btn small" type="submit">Créer et relier</button><button class="btn ghost small" type="button" data-act="ligne-creer-non">Annuler</button></div>
+      </form>`:""}
+    </div>`).join("")}
+  </div>`;
+}
+const nomDepuisLigne=d=>{ let t=String(d).replace(/^(option|variante)\s*\d*\s*[-–:]?\s*/i,"");
+  for(let k=0;k<2;k++) t=t.replace(/^(fourniture et pose|fourniture et mise en place|f\s*\/\s*p|fourniture|pose|remplacement|cr[ée]ation|mise en place|installation|r[ée]alisation|ajout|compl[ée]ment)\s+(d['’]\s*une?\s+|d['’]\s*|de la |de l['’]|des |du |de |d['’]un |d['’]une |une? |les? |la )?/i,"").trim();
+  const pc=produitCache(d); if(pc) return pc.nom;
+  t=t.split(/[.,;(]/)[0].trim().replace(/\bissus de secours/i,"issue de secours"); return harmoniser(t.slice(0,60)); };
+const motsDepuisLigne=d=>produitCache(d)?produitCache(d).cle:motsUtiles(nomDepuisLigne(d)).slice(0,2).join(" ");
 
 /* ---- Onglet Relances ---- */
 function manquantesParFournisseur(){
@@ -731,21 +781,53 @@ async function openChantier(id){
 }
 async function refreshChantier(){ await loadBiblio(); await loadChantierData(); render(); }
 
+/* Prestation sans produit : pas de fiche technique à fournir */
+const RE_PRESTATION=/^(curage|nettoyage|d[ée]pose|d[ée]molition|d[ée]montage|tranch[ée]e|terrassement|fouille|[ée]vacuation|enl[èe]vement|location|transport|nacelle|[ée]chafaudage|main[- ]d.?[oœ]euvre|installation de chantier|repli|protection|bouchage|reprise|rebouchage|d[ée]blai|remblai|d[ée]placement|[ée]tude|relev[ée]|plans?\b|dossier|doe\b|essais?|contr[ôo]le|mise en service|raccordement|d[ée]barras|gardiennage|traitement des espaces verts|compl[ée]ment traitement|entretien|r[ée]glage|ajustement|piquetage|percement|carottage|saign[ée]e)/i;
+// Produits cachés dans une ligne de prestation (ex. « Reprise peinture ou produit anti graffiti »)
+const PRODUITS_CACHES=[{re:/anti[- ]?graffiti/i,nom:"Produit anti-graffiti",cle:"graffiti"}];
+const produitCache=d=>PRODUITS_CACHES.find(x=>x.re.test(norm(d)));
+const estPrestation=d=>!produitCache(d)&&RE_PRESTATION.test(String(d).replace(/^(option|variante)\s*\d*\s*[-–:]?\s*/i,"").trim());
+function piecesPour(des){
+  const d=norm(des), p=["Fiche technique"];
+  if(/coupe[- ]?feu|pare[- ]?flamme|\bei\s?\d{2}|\bcf\s?\d|\bei\b|\brei\b/.test(d)) p.push("PV feu");
+  if(/acousti|\bdb\b|affaibliss/.test(d)) p.push("PV acoustique");
+  return p;
+}
 async function importDevis(){
   const lots=parseDevis($("#devis").value);
   if(!lots.length) return toast("Aucune ligne reconnue. Vérifie le format.");
-  const ent=S.ent.id, ch=S.ch.id; let n=0, m=0;
+  const ent=S.ent.id, ch=S.ch.id; let n=0, m=0, crees=0, presta=0; const nouveaux={};
   for(let i=0;i<lots.length;i++){
-    const L=lots[i];
+    const L=lots[i], lotSansFiche=/moins[- ]?value/i.test(L.designation);
     const [lot]=await q(sb.from("lots").insert({entreprise_id:ent,chantier_id:ch,numero:L.numero,designation:L.designation,ordre:i}).select());
-    if(L.lignes.length){
-      const rows=L.lignes.map((x,j)=>{ const p=matchProduit(x.designation); if(p) m++; n++;
-        return {entreprise_id:ent,lot_id:lot.id,numero:x.numero,designation:x.designation,unite:x.unite,quantite:x.quantite,produit_id:p?p.id:null,ordre:j}; });
-      await q(sb.from("lignes_devis").insert(rows));
+    if(!L.lignes.length) continue;
+    const rows=[];
+    for(const [j,x] of L.lignes.entries()){
+      n++; let p=null, sansFiche=false;
+      if(lotSansFiche || estPrestation(x.designation)){ sansFiche=true; presta++; }
+      else if(produitCache(x.designation)){ const pc=produitCache(x.designation); p=S.produits.find(y=>(y.mots_cles||[]).some(k=>norm(k)===pc.cle))||null; }
+      else p=matchProduit(x.designation);
+      if(sansFiche){}
+      else if(!p){ // produit inconnu : créé dans la bibliothèque avec les pièces à demander
+        const nom=nomDepuisLigne(x.designation), cle=norm(nom);
+        p=nouveaux[cle];
+        if(!p){ const [np]=await q(sb.from("produits").insert({entreprise_id:ent,nom,mots_cles:[motsDepuisLigne(x.designation)].filter(Boolean)}).select());
+          await q(sb.from("pieces_requises").insert(piecesPour(x.designation).map((lib,k)=>({entreprise_id:ent,produit_id:np.id,libelle:lib,ordre:k}))));
+          p=nouveaux[cle]={...np,pieces_requises:[]}; S.produits.push(p); crees++; }
+      } else m++;
+      rows.push({entreprise_id:ent,lot_id:lot.id,numero:x.numero,designation:x.designation,unite:x.unite,quantite:x.quantite,produit_id:p?p.id:null,sans_fiche:sansFiche,ordre:j});
     }
+    await q(sb.from("lignes_devis").insert(rows));
   }
-  toast(`${lots.length} lots, ${n} lignes importées, ${m} produits reconnus`);
-  await loadChantierData(); S.tab="pieces"; render();
+  // Infos du chantier depuis l'en-tête du PDF (seulement les champs encore vides)
+  const E=S.pdfEntete||{}, c=S.ch, upd={};
+  if(!c.maitre_ouvrage && E.client) upd.maitre_ouvrage=E.client;
+  if(c.montant_ht==null && E.totalHT!=null) upd.montant_ht=E.totalHT;
+  if(!c.designation_travaux && (E.objet||E.numero)) upd.designation_travaux=[E.objet&&norm(E.objet)!==norm(c.nom)?E.objet:"", E.numero?"Devis "+E.numero+(E.date?" du "+E.date:""):""].filter(Boolean).join(" — ");
+  if(Object.keys(upd).length){ const [c2]=await q(sb.from("chantiers").update(upd).eq("id",ch).select()); if(c2) majChantierLocal(c2); }
+  S.pdfEntete=null;
+  toast(`${n} lignes : ${m} produits reconnus, ${crees} créés, ${presta} prestations sans fiche`);
+  await loadBiblio(); await loadChantierData(); S.tab="pieces"; render();
 }
 
 async function replaceDevis(){
@@ -878,6 +960,24 @@ async function lignesPdf(file){
   }
   return rangs;
 }
+/* Infos d'en-tête du devis : n°, date, client, objet, total HT */
+function enteteDevisPdf(rangs){
+  const iTab=rangs.findIndex(r=>{ const t=r.items.map(i=>i.s).join(" "); return /d[ée]signation|libell[ée]/i.test(t)&&/qt|unit|prix/i.test(t); });
+  const avant=iTab>0?rangs.slice(0,iTab):rangs.filter(r=>r.page===1), tout=rangs.map(r=>r.items.map(i=>i.s).join(" "));
+  const e={};
+  const tx=avant.map(r=>r.items.map(i=>i.s).join(" ")).join("\n");
+  const mNum=tx.match(/\b(D|DE|DEV)[- ]?\d{4}[- ]\d{1,5}\b/)||tx.match(/devis\s*n[°o]?\s*:?\s*([A-Z0-9-]{3,})/i); if(mNum) e.numero=mNum[0].replace(/^devis\s*n[°o]?\s*:?\s*/i,"");
+  const mDate=tx.match(/(?:en date du|date)\s*:?\s*(\d{2}\/\d{2}\/\d{4})/i); if(mDate) e.date=mDate[1];
+  const droite=avant.filter(r=>r.page===1).flatMap(r=>{ const its=r.items.filter(i=>i.x>250), t=its.map(i=>i.s).join(" ");
+    if(!its.length||/:|valable|en date|^devis\b|^n°|\d{2}\/\d{2}\/\d{4}|\bD-\d{4}/i.test(t)) return []; return [{s:t,x:its[0].x,y:r.y}]; });
+  if(droite.length){ droite.sort((a,b)=>b.y-a.y); e.client=droite[0].s;
+    const adr=droite.slice(1,4).map(i=>i.s).filter(t=>!/^(france|tva|t[ée]l|email)/i.test(t)); if(adr.length) e.adresseClient=adr.join(", "); }
+  if(iTab>0){ for(let k=iTab-1;k>=Math.max(0,iTab-3);k--){ const r=rangs[k]; if(r.items.length===1&&r.items[0].x<200&&!/:/.test(r.items[0].s)&&!/^france$/i.test(r.items[0].s)){ e.objet=r.items[0].s; break; } } }
+  const reMt=/-?\d{1,3}(?:[\s\u00a0\u202f.]\d{3})*,\d{2}/g;
+  const tot=tout.filter(t=>/total\s*(net\s*)?h\.?t/i.test(t)&&!/sous/i.test(t)&&reMt.test(t)).pop(); reMt.lastIndex=0;
+  if(tot){ const m=tot.match(reMt); if(m) e.totalHT=versNombre(m[m.length-1]); }
+  return e;
+}
 function analyserDevisPdf(rangs){
   // 1. Colonnes d'après la ligne d'en-tête du tableau
   let col=null;
@@ -926,11 +1026,12 @@ async function importerPdfDevis(input){
   try{
     const debut=new Uint8Array(await f.slice(0,1024).arrayBuffer()), entete=String.fromCharCode(...debut);
     if(!entete.includes("%PDF")){ toast("Ce fichier n'est pas un PDF."); input.value=""; return; }
-    const txt=analyserDevisPdf(await lignesPdf(f));
+    const rangs=await lignesPdf(f), txt=analyserDevisPdf(rangs); S.pdfEntete=enteteDevisPdf(rangs);
     const nb=txt?txt.split("\n").length:0;
     if(!nb){ toast("Aucune ligne de devis trouvée dans ce PDF. Exporte-le en Excel depuis Obat et colle les lignes."); return; }
     $("#devis").value=txt; S.pdfLu=f.name;
-    const info=$("#pdf-info"); if(info) info.innerHTML=`<b>${esc(f.name)}</b> : ${txt.split("\n").filter(l=>/;;$/.test(l)).length} lots et ${txt.split("\n").filter(l=>!/;;$/.test(l)).length} lignes trouvés. Vérifie le tableau ci-dessous (tu peux le corriger), puis clique sur « Importer le devis ».`;
+    const E=S.pdfEntete, infos=[E.numero&&"devis "+esc(E.numero), E.client&&"client "+esc(E.client), E.totalHT!=null&&"total "+esc(euros(E.totalHT))].filter(Boolean);
+    const info=$("#pdf-info"); if(info) info.innerHTML=`<b>${esc(f.name)}</b> : ${txt.split("\n").filter(l=>/;;$/.test(l)).length} lots et ${txt.split("\n").filter(l=>!/;;$/.test(l)).length} lignes trouvés${infos.length?", "+infos.join(", "):""}. Clique sur « Importer le devis » : infos du chantier, produits et fiches à demander seront remplis automatiquement.`;
     toast("PDF lu : vérifie puis importe");
   }catch(e){ console.error(e); toast(e.message||"Lecture du PDF impossible"); }
   input.value="";
@@ -1203,6 +1304,9 @@ document.addEventListener("click",async e=>{
     else if(a==="seed") await busy(b,seedBiblio);
     else if(a==="del-prod"){ const {count}=await sb.from("lignes_devis").select("id",{count:"exact",head:true}).eq("produit_id",b.dataset.id); S.delProd={id:b.dataset.id,nbLignes:count||0}; render(); }
     else if(a==="del-prod-no"){ S.delProd=null; render(); }
+    else if(a==="ligne-creer"){ S.creerPour=b.dataset.id; render(); const n=$("#cl-nom"); if(n) n.focus(); }
+    else if(a==="ligne-creer-non"){ S.creerPour=null; render(); }
+    else if(a==="ligne-fiche") await busy(b,async()=>{ await q(sb.from("lignes_devis").update({sans_fiche:b.dataset.v==="1"}).eq("id",b.dataset.id)); await loadChantierData(); render(); toast(b.dataset.v==="1"?"Ligne marquée sans fiche":"Ligne remise à traiter"); });
     else if(a==="del-piece"){ S.delPiece=b.dataset.id; S.delProd=null; render(); }
     else if(a==="del-piece-no"){ S.delPiece=null; render(); }
     else if(a==="del-piece-yes") await busy(b,supprimerPiece);
@@ -1280,6 +1384,18 @@ document.addEventListener("submit",async e=>{
       if(!upd.nom) return toast("La raison sociale est obligatoire.");
       upd.couleur=$("#e-couleur").value;
       await majEntreprise(upd); render(); toast("Entreprise enregistrée");
+    }
+    if(k==="creer-ligne"){
+      const ligne=f.dataset.ligne, nom=$("#cl-nom").value.trim(), lib=$("#cl-type").value, fichier=$("#cl-pdf").files[0];
+      const mots=$("#cl-mots").value.split(",").map(x=>norm(x.trim())).filter(Boolean);
+      const fid=await fournisseurId($("#cl-four").value);
+      const [p]=await q(sb.from("produits").insert({entreprise_id:S.ent.id,nom,fournisseur_id:fid,mots_cles:mots}).select());
+      const [pc]=await q(sb.from("pieces_requises").insert({entreprise_id:S.ent.id,produit_id:p.id,libelle:lib,ordre:0}).select());
+      if(fichier){ const path=`${S.ent.id}/produits/${p.id}/${Date.now()}-${safeName(fichier.name)}`;
+        const {error}=await sb.storage.from("documents").upload(path,fichier,{contentType:fichier.type||"application/pdf"});
+        if(error) toast(messageErreur(error)); else await q(sb.from("documents").insert({entreprise_id:S.ent.id,piece_requise_id:pc.id,storage_path:path,nom_fichier:fichier.name,source:"upload"})); }
+      await q(sb.from("lignes_devis").update({produit_id:p.id}).eq("id",ligne));
+      S.creerPour=null; await refreshChantier(); toast(fichier?"Produit créé avec sa fiche":"Produit créé : ajoute sa fiche quand tu l'as");
     }
     if(k==="produit"){
       const split=v=>v.split(",").map(x=>x.trim()).filter(Boolean);
