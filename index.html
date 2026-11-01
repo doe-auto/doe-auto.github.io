@@ -494,7 +494,10 @@ function viewChantier(){
   const c=S.ch, t=S.tab;
   const tabs=[["devis","Devis"],["pieces","Pièces"],["relances","Relances"],["doe","DOE"],["renta","Rentabilité"]];
   let inner = t==="devis"?tabDevis(): t==="pieces"?tabPieces(): t==="relances"?tabRelances(): t==="renta"?tabRenta(): tabDOE();
-  return `<div class="row between" style="padding-top:6px"><div style="min-width:0"><button class="link" data-act="home">← Chantiers</button><h1>${esc(c.nom)}</h1></div></div>
+  return `<div class="row between" style="padding-top:6px"><div style="min-width:0"><button class="link" data-act="home">← Chantiers</button><h1>${esc(c.nom)}</h1></div>
+    ${S.chDel?`<div class="confirm" style="max-width:420px">Supprimer « ${esc(c.nom)} » ? Le devis, les photos, les relances, les dépenses et les DOE générés de ce chantier seront effacés définitivement. La bibliothèque n'est pas touchée.
+      <div class="row"><button class="btn danger small" data-act="ch-del-yes">Supprimer définitivement</button><button class="btn ghost small" data-act="ch-del-no">Annuler</button></div></div>`
+      :`<button class="link" data-act="ch-del" style="color:var(--danger,#b42318)">Supprimer le chantier</button>`}</div>
     <nav class="tabs" role="tablist">${tabs.map(([k,l])=>`<button role="tab" aria-selected="${t===k}" data-act="tab" data-tab="${k}">${l}${k==="pieces"?" · "+stats().pct+" %":""}</button>`).join("")}</nav>
     <section class="panel ${t==="devis"||t==="pieces"?"cols":""}">${inner}</section>`;
 }
@@ -1059,6 +1062,25 @@ async function importDevis(){
   await loadChantierData(); S.tab="pieces"; render();
 }
 
+async function supprimerChantier(){
+  const id=S.ch.id, rm=async(b,paths)=>{ paths=paths.filter(Boolean); for(let i=0;i<paths.length;i+=100) await sb.storage.from(b).remove(paths.slice(i,i+100)); };
+  const lotIds=(await q(sb.from("lots").select("id").eq("chantier_id",id))).map(l=>l.id);
+  const ph=lotIds.length?await q(sb.from("photos").select("storage_path").in("lot_id",lotIds)):[];
+  await rm("photos",[...ph.map(p=>p.storage_path),S.ch.photo_couverture]);
+  const ex=await sb.from("doe_exports").select("storage_path").eq("chantier_id",id);
+  await rm("doe",(ex.data||[]).map(x=>x.storage_path));
+  const dp=await sb.from("depenses").select("storage_path").eq("chantier_id",id);
+  await rm("documents",(dp.data||[]).map(x=>x.storage_path));
+  const rel=(await q(sb.from("relances").select("id").eq("chantier_id",id))).map(r=>r.id);
+  if(rel.length){ await q(sb.from("relance_pieces").delete().in("relance_id",rel)); await q(sb.from("relances").delete().in("id",rel)); }
+  await sb.from("doe_exports").delete().eq("chantier_id",id);
+  await sb.from("depenses").delete().eq("chantier_id",id);
+  if(lotIds.length){ await q(sb.from("photos").delete().in("lot_id",lotIds)); await q(sb.from("lignes_devis").delete().in("lot_id",lotIds)); await q(sb.from("lots").delete().in("id",lotIds)); }
+  const del=await q(sb.from("chantiers").delete().eq("id",id).select("id"));
+  if(!del.length) throw new Error("suppression refusée par la base (droits)");
+  S.chDel=false; await goHome(); toast("Chantier supprimé");
+}
+
 async function replaceDevis(){
   const ids=S.lots.map(l=>l.id);
   const ph=Object.values(S.photos).flat().map(p=>p.storage_path);
@@ -1429,7 +1451,7 @@ document.addEventListener("click",async e=>{
     else if(a==="biblio"){ S.view="biblio"; await loadBiblio(); render(); }
     else if(a==="logout"){ await sb.auth.signOut(); }
     else if(a==="authmode"){ S.authMode=S.authMode==="login"?"signup":"login"; render(); }
-    else if(a==="open") await openChantier(b.dataset.id);
+    else if(a==="open"){ S.chDel=false; await openChantier(b.dataset.id); }
     else if(a==="tab"){ S.tab=b.dataset.tab; render(); window.scrollTo({top:0}); }
     else if(a==="exemple"){ $("#devis").value=EXEMPLE_DEVIS; }
     else if(a==="import") await busy(b,importDevis);
@@ -1467,6 +1489,9 @@ document.addEventListener("click",async e=>{
       S.cfgOpen=true; await sauverConfig(cfg); render(); toast("Contenu du DOE enregistré : clique sur Regénérer pour l'appliquer");
     });
     else if(a==="extra-del"){ const cfg={...(S.ch.doe_config||{})}; cfg.extras=(cfg.extras||[]).filter(x=>x.path!==b.dataset.path); S.cfgOpen=true; await sauverConfig(cfg); render(); toast("Document retiré du DOE"); }
+    else if(a==="ch-del"){ S.chDel=true; render(); }
+    else if(a==="ch-del-no"){ S.chDel=false; render(); }
+    else if(a==="ch-del-yes") await busy(b,supprimerChantier);
     else if(a==="exp-del"){ S.expDel=b.dataset.id; render(); }
     else if(a==="exp-del-no"){ S.expDel=null; render(); }
     else if(a==="exp-del-yes") await busy(b,async()=>{
