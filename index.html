@@ -245,18 +245,47 @@ function matchProduit(des){
     if(i>=0 && (i<pos || (i===pos && nk.length>len))){ pos=i; len=nk.length; best=p; } }));
   return best;
 }
+/* Lecture du devis collé (Excel, Obat…) : colonnes repérées par l'en-tête, sinon devinées ligne par ligne */
+const RE_UNITE=/^(m²|m2|m³|m3|ml|m|u|un|unité|unite|ens|ensemble|ft|forfait|fft|kg|t|l|h|j|pce|pièce|piece|pm|lot|m\.l\.|mètre|metre)\.?$/i;
+const RE_NUM=/^\d+(\.\d+)*\.?$/;
+const nombre=s=>{ s=String(s||"").replace(/\s|€|HT/gi,"").replace(",","."); return s!==""&&!isNaN(s)?Number(s):null; };
 function parseDevis(txt){
-  const lots=[]; let cur=null;
-  txt.split(/\r?\n/).forEach(raw=>{
-    const line=raw.trim(); if(!line) return;
-    const [n,des,u,qte]=line.split(/\t|;/).map(x=>(x||"").trim());
-    if(!des) return;
-    if(!u){ cur={numero:n,designation:des,lignes:[]}; lots.push(cur); return; }
-    if(!cur){ cur={numero:String(lots.length+1),designation:"LOT",lignes:[]}; lots.push(cur); }
-    const qn=parseFloat((qte||"").replace(/\s/g,"").replace(",","."));
-    cur.lignes.push({numero:n,designation:des,unite:u,quantite:isNaN(qn)?null:qn});
+  const rows=txt.split(/\r?\n/).map(r=>r.split(/\t|;/).map(x=>(x||"").trim())).filter(r=>r.some(Boolean));
+  // 1. En-tête : colonnes nommées
+  let map=null;
+  const hi=rows.findIndex(r=>r.some(c=>/d[ée]signation|libell[ée]|description/i.test(c)));
+  if(hi>=0 && hi<5){
+    const H=rows[hi].map(c=>norm(c));
+    const f=re=>H.findIndex(c=>re.test(c));
+    map={n:f(/^(n°?|no|num|numero|ref|item|code|poste)$|^n[°o]/),des:f(/designation|libelle|description/),u:f(/^(u|unite|un|uv)$|unite/),q:f(/^(q|qte|quantite|qt)\.?$|quantite|qte/)};
+    if(map.des<0) map=null;
+  }
+  const lots=[]; let cur=null, auto=0;
+  rows.forEach((r,ri)=>{
+    if(map && ri<=hi) return;
+    let n="",des="",u="",q=null;
+    if(map){
+      n=map.n>=0?r[map.n]||"":""; des=r[map.des]||""; u=map.u>=0?r[map.u]||"":""; q=map.q>=0?nombre(r[map.q]):null;
+    } else {
+      // 2. Sans en-tête : n° = cellule type 1.2, désignation = plus long texte, unité = cellule unité, quantité = 1er nombre après la désignation
+      const cells=r.map((c,k)=>({c,k}));
+      const num=cells.find(x=>RE_NUM.test(x.c)&&x.k===0);
+      const texts=cells.filter(x=>x.c&&nombre(x.c)===null&&!RE_UNITE.test(x.c)&&x!==num);
+      const d=texts.sort((a,b)=>b.c.length-a.c.length)[0];
+      if(!d) return;
+      des=d.c; n=num?num.c:"";
+      const uc=cells.find(x=>RE_UNITE.test(x.c)); u=uc?uc.c:"";
+      const nums=cells.filter(x=>x!==num&&x.k>d.k&&nombre(x.c)!==null);
+      q=nums.length?nombre(nums[0].c):null;
+    }
+    if(!des || /^(total|sous-total|montant|tva|net a payer)/i.test(norm(des))) return;
+    const estTitre=!u && q===null;
+    if(estTitre){ cur={numero:n||String(lots.length+1),designation:des,lignes:[]}; lots.push(cur); return; }
+    if(!cur){ cur={numero:"1",designation:"Travaux",lignes:[]}; lots.push(cur); }
+    auto++;
+    cur.lignes.push({numero:n||`${cur.numero}.${cur.lignes.length+1}`,designation:des,unite:u,quantite:q});
   });
-  return lots;
+  return lots.filter(l=>l.lignes.length);
 }
 
 /* ===================== CHARGEMENTS ===================== */
@@ -410,7 +439,7 @@ function viewChantier(){
 function tabDevis(){
   if(!S.lots.length) return `<div class="box">
       <h2>Import du devis</h2>
-      <div class="hint">Colle tes lignes depuis Excel ou Obat : N° · Désignation · Unité · Quantité (tabulation ou point-virgule). Une ligne sans unité = titre de lot.</div>
+      <div class="hint">Copie le tableau de ton devis depuis Excel ou Obat (avec la ligne d'en-tête si possible : Désignation, Quantité, Unité…) et colle-le ici. L'ordre des colonnes n'a pas d'importance. Une ligne sans unité ni quantité devient un titre de lot ; les lignes Total / TVA sont ignorées.</div>
       ${S.produits.length?"":`<div class="confirm" style="background:var(--warn-soft)">Ta bibliothèque est vide : aucun produit ne sera reconnu. <button class="link" data-act="biblio">Ouvrir la bibliothèque</button></div>`}
       <textarea id="devis" spellcheck="false" placeholder="Colle ici les lignes de ton devis…"></textarea>
       <div class="row"><button class="btn" data-act="import">Importer le devis</button><button class="btn ghost" data-act="exemple">Coller l'exemple</button></div>
@@ -1017,12 +1046,15 @@ async function genererDOE(){
     }catch(err){ log(`✗ Annexe ignorée : ${a.titre} (${err.message||err})`); }
   }
 
-  // 2. Matériaux mis en œuvre
-  const mats=[]; const vuP=new Set();
-  S.lots.forEach(l=>l.lignes_devis.forEach(li=>{ const rs=(byL[li.id]||[]).filter(r=>r.produit_id); if(!rs.length) return; const r0=rs[0];
-    const k=l.numero+"|"+r0.produit_id; if(vuP.has(k)) return; vuP.add(k);
-    mats.push({lot:`${l.numero} ${l.designation}`,produit:r0.produit_nom,four:r0.fournisseur_nom||"",dtu:r0.dtu||"",docs:[...new Set(rs.filter(r=>r.piece_libelle).map(r=>r.piece_libelle+(r.statut==="en_bibliotheque"?"":" (manquant)")))].join(", ")}); }));
-  const matChunks=[]; for(let i=0;i<Math.max(mats.length,1);i+=18) matChunks.push(mats.slice(i,i+18));
+  // 2. Ouvrages réalisés et matériaux mis en œuvre : toutes les lignes du devis
+  const mats=[];
+  S.lots.forEach(l=>{ mats.push({titre:`${l.numero} ${l.designation}`});
+    l.lignes_devis.forEach(li=>{ const rs=(byL[li.id]||[]).filter(r=>r.produit_id); const r0=rs[0];
+      mats.push({n:li.numero||"",des:li.designation,q:li.quantite!=null?String(+li.quantite).replace(".",","):"",u:li.unite||"",
+        produit:r0?r0.produit_nom:"",docs:r0?[...new Set(rs.filter(r=>r.piece_libelle).map(r=>r.piece_libelle+(r.statut==="en_bibliotheque"?"":" (manquant)")))].join(", "):""}); }); });
+  const matChunks=[]; let cur=[], poids=0;
+  mats.forEach(m=>{ const w=m.titre?1:1+Math.floor(String(m.des).length/70); if(poids+w>30&&cur.length){ matChunks.push(cur); cur=[]; poids=0; } cur.push(m); poids+=w; });
+  if(cur.length||!matChunks.length) matChunks.push(cur);
 
   // 3. Photos
   const photoLots=S.lots.filter(l=>(S.photos[l.id]||[]).length);
@@ -1065,7 +1097,7 @@ async function genererDOE(){
       <div style="color:#7a838e;margin-top:4px">Édité le ${new Date().toLocaleDateString("fr-FR")}</div>
     </div></div>`);
   const ligneSom=(t,pg,ind)=>`<div style="display:flex;gap:8px;padding:5px 0;${ind?"padding-left:22px;font-size:12px":"font-weight:700"}"><span>${t}</span><span style="flex:1;border-bottom:1px dotted #999;transform:translateY(-4px)"></span><span>${pg}</span></div>`;
-  let som=H2("Sommaire")+ligneSom("A. Identification du chantier",3)+ligneSom("B. Matériaux mis en œuvre",pMat)+ligneSom("C. Attestations de pose",pAtt)
+  let som=H2("Sommaire")+ligneSom("A. Identification du chantier",3)+ligneSom("B. Ouvrages réalisés et matériaux mis en œuvre",pMat)+ligneSom("C. Attestations de pose",pAtt)
     +S.lots.map((l,i)=>ligneSom(`${esc(l.numero)} ${esc(l.designation)}`,pAtt+i,1)).join("")
     +(photoPages.length?ligneSom("D. Photos de fin de travaux",pPhoto):"")
     +ligneSom(`${photoPages.length?"E":"D"}. Annexes — fiches techniques et PV`,annexPdfs.length?pAnn:"—")
@@ -1083,8 +1115,9 @@ async function genererDOE(){
     ${e.assurance?`<tr>${TH("Garantie décennale")}${TD(esc(e.assurance))}</tr>`:""}${e.qualifications?`<tr>${TH("Qualifications")}${TD(esc(e.qualifications))}</tr>`:""}<tr>${TH("Signataire")}${TD(esc(c.signataire||S.nomAffiche||""))}</tr></table>
     <div style="height:22px"></div>${H2("Lots réalisés")}<table ${TB}><tr>${TH("Lot","12%")}${TH("Désignation")}${TH("Lignes","14%")}</tr>
     ${S.lots.map(l=>`<tr>${TD(esc(l.numero))}${TD(esc(l.designation))}${TD(l.lignes_devis.length)}</tr>`).join("")}</table>`,3,total));
-  matChunks.forEach((ch,i)=>pages.push(pageHTML((i?"":H2("B. Matériaux mis en œuvre"))+`<table ${TB}><tr>${TH("Lot","20%")}${TH("Produit","27%")}${TH("Fabricant","13%")}${TH("DTU","10%")}${TH("Documents")}</tr>
-    ${ch.map(m=>`<tr>${TD(esc(m.lot))}${TD(esc(m.produit))}${TD(esc(m.four))}${TD(esc(m.dtu))}${TD(esc(m.docs))}</tr>`).join("")||`<tr>${TD("Aucun produit associé",null)}</tr>`}</table>`
+  matChunks.forEach((ch,i)=>pages.push(pageHTML((i?"":H2("B. Ouvrages réalisés et matériaux mis en œuvre"))+`<table style="width:100%;border-collapse:collapse;font-size:11px"><tr>${TH("N°","7%")}${TH("Ouvrage")}${TH("Qté","8%")}${TH("U","6%")}${TH("Produit mis en œuvre","24%")}${TH("Documents","18%")}</tr>
+    ${ch.map(m=>m.titre?`<tr><td colspan="6" style="border:1px solid #888;padding:5px 7px;background:#1a3f8f;color:#fff;font-weight:700">${esc(m.titre)}</td></tr>`
+      :`<tr>${TD(esc(m.n))}${TD(esc(m.des))}<td style="border:1px solid #888;padding:5px 7px;text-align:right">${esc(m.q)}</td>${TD(esc(m.u))}${TD(esc(m.produit)||'<span style="color:#999">—</span>')}${TD(esc(m.docs))}</tr>`).join("")||`<tr>${TD("Aucun ouvrage",null)}</tr>`}</table>`
     +(i===matChunks.length-1&&annexPdfs.length>22?`<div style="height:16px"></div>${H2("Liste des annexes")}${annexPdfs.map((a,j)=>`<div style="font-size:11px">Annexe ${j+1} — ${esc(a.titre)} … p. ${a.debut}</div>`).join("")}`:""),pMat+i,total)));
   S.lots.forEach((l,i)=>{ const tmp=document.createElement("div"); tmp.innerHTML=attestationPose(l); const a=tmp.firstElementChild; a.style.border="0"; a.style.padding="0"; a.style.background="#fff";
     pages.push(pageHTML(a.outerHTML,pAtt+i,total,true)); });
