@@ -505,6 +505,7 @@ function blocControle(){
   if(!ls.length) return `<div class="box" style="border-color:var(--ok)"><div class="row between"><h2>Contrôle des fiches</h2><span class="chip ok">Chaque ligne a sa fiche</span></div></div>`;
   return `<div class="box" style="border-color:var(--bad)" id="controle">
     <div class="row between"><h2>Lignes sans fiche</h2><span class="chip bad">${ls.length} ligne${ls.length>1?"s":""} à traiter</span></div>
+    <div class="row" style="margin:8px 0"><button class="btn" data-act="regler-lignes">Tout régler automatiquement</button><span class="hint" style="margin:0">Reconnaît les prestations et les produits fournis par le client, rattache les produits connus et crée les autres dans la Bibliothèque avec leurs pièces à demander.</span></div>
     <div class="hint">Chaque ligne qui contient un produit doit avoir sa fiche technique ou son PV. Pour chaque ligne : choisis le produit de la bibliothèque, crée-le avec son PDF, ou indique que c'est une prestation sans produit (curage, nettoyage, main-d'œuvre…).</div>
     ${ls.map(li=>`<div class="item" style="padding-inline:0">
       <div class="t"><div><span class="num">${esc(li.numero)}</span>${esc(li.designation)}</div><span class="qty">${li.quantite??""} ${esc(li.unite||"")}</span></div>
@@ -786,35 +787,56 @@ const RE_PRESTATION=/^(curage|nettoyage|d[ée]pose|d[ée]molition|d[ée]montage|
 // Produits cachés dans une ligne de prestation (ex. « Reprise peinture ou produit anti graffiti »)
 const PRODUITS_CACHES=[{re:/anti[- ]?graffiti/i,nom:"Produit anti-graffiti",cle:"graffiti"}];
 const produitCache=d=>PRODUITS_CACHES.find(x=>x.re.test(norm(d)));
-const estPrestation=d=>!produitCache(d)&&RE_PRESTATION.test(String(d).replace(/^(option|variante)\s*\d*\s*[-–:]?\s*/i,"").trim());
+// Fourni par le client, ou pose seule : MAGENCIA ne fournit pas le produit, pas de fiche à donner
+const RE_SANS_FOURNITURE=/\bfourni(e|s|es)?\s+par\b|^pose\b(?!.*\bfourniture\b)/i;
+const estPrestation=d=>{ const t=String(d).replace(/^(option|variante)\s*\d*\s*[-–:]?\s*/i,"").trim();
+  return RE_SANS_FOURNITURE.test(t) || (!produitCache(d)&&RE_PRESTATION.test(t)); };
 function piecesPour(des){
   const d=norm(des), p=["Fiche technique"];
   if(/coupe[- ]?feu|pare[- ]?flamme|\bei\s?\d{2}|\bcf\s?\d|\bei\b|\brei\b/.test(d)) p.push("PV feu");
   if(/acousti|\bdb\b|affaibliss/.test(d)) p.push("PV acoustique");
   return p;
 }
+/* Classe une ligne : prestation sans fiche, produit reconnu, ou produit créé dans la bibliothèque */
+async function classerLigne(des, lotDes, cache, cpt){
+  if(/moins[- ]?value/i.test(lotDes||"") || estPrestation(des)){ cpt.presta++; return {p:null,sansFiche:true}; }
+  const pc=produitCache(des);
+  let p=pc ? S.produits.find(y=>(y.mots_cles||[]).some(k=>norm(k)===pc.cle))||null : matchProduit(des);
+  if(p){ cpt.m++; return {p,sansFiche:false}; }
+  const nom=nomDepuisLigne(des), cle=norm(nom);
+  p=cache[cle]||S.produits.find(y=>norm(y.nom)===cle);
+  if(!p){ const ent=S.ent.id;
+    const [np]=await q(sb.from("produits").insert({entreprise_id:ent,nom,mots_cles:[motsDepuisLigne(des)].filter(Boolean)}).select());
+    await q(sb.from("pieces_requises").insert(piecesPour(des).map((lib,k)=>({entreprise_id:ent,produit_id:np.id,libelle:lib,ordre:k}))));
+    p={...np,pieces_requises:piecesPour(des).map(l=>({libelle:l,documents:[]}))}; S.produits.push(p); cpt.crees++; }
+  else cpt.m++;
+  cache[cle]=p; return {p,sansFiche:false};
+}
+/* Règle d'un clic les lignes d'un chantier déjà importé */
+async function reglerLignes(){
+  const cache={}, cpt={m:0,crees:0,presta:0};
+  for(const li of lignesSansFiche()){
+    const lot=S.lots.find(l=>l.lignes_devis.some(x=>x.id===li.id));
+    if(li.produit_id){ const p=S.produits.find(y=>y.id===li.produit_id);
+      if(p && !(p.pieces_requises||[]).length){ await q(sb.from("pieces_requises").insert(piecesPour(li.designation).map((lib,k)=>({entreprise_id:S.ent.id,produit_id:p.id,libelle:lib,ordre:k})))); p.pieces_requises=[{}]; cpt.m++; }
+      continue; }
+    const r=await classerLigne(li.designation, lot&&lot.designation, cache, cpt);
+    await q(sb.from("lignes_devis").update({produit_id:r.p?r.p.id:null,sans_fiche:r.sansFiche}).eq("id",li.id));
+  }
+  toast(`${cpt.m} produits reconnus, ${cpt.crees} créés, ${cpt.presta} prestations sans fiche`);
+  await loadBiblio(); await loadChantierData(); render();
+}
 async function importDevis(){
   const lots=parseDevis($("#devis").value);
   if(!lots.length) return toast("Aucune ligne reconnue. Vérifie le format.");
-  const ent=S.ent.id, ch=S.ch.id; let n=0, m=0, crees=0, presta=0; const nouveaux={};
+  const ent=S.ent.id, ch=S.ch.id; let n=0; const nouveaux={}, cpt={m:0,crees:0,presta:0};
   for(let i=0;i<lots.length;i++){
-    const L=lots[i], lotSansFiche=/moins[- ]?value/i.test(L.designation);
+    const L=lots[i];
     const [lot]=await q(sb.from("lots").insert({entreprise_id:ent,chantier_id:ch,numero:L.numero,designation:L.designation,ordre:i}).select());
     if(!L.lignes.length) continue;
     const rows=[];
     for(const [j,x] of L.lignes.entries()){
-      n++; let p=null, sansFiche=false;
-      if(lotSansFiche || estPrestation(x.designation)){ sansFiche=true; presta++; }
-      else if(produitCache(x.designation)){ const pc=produitCache(x.designation); p=S.produits.find(y=>(y.mots_cles||[]).some(k=>norm(k)===pc.cle))||null; }
-      else p=matchProduit(x.designation);
-      if(sansFiche){}
-      else if(!p){ // produit inconnu : créé dans la bibliothèque avec les pièces à demander
-        const nom=nomDepuisLigne(x.designation), cle=norm(nom);
-        p=nouveaux[cle];
-        if(!p){ const [np]=await q(sb.from("produits").insert({entreprise_id:ent,nom,mots_cles:[motsDepuisLigne(x.designation)].filter(Boolean)}).select());
-          await q(sb.from("pieces_requises").insert(piecesPour(x.designation).map((lib,k)=>({entreprise_id:ent,produit_id:np.id,libelle:lib,ordre:k}))));
-          p=nouveaux[cle]={...np,pieces_requises:[]}; S.produits.push(p); crees++; }
-      } else m++;
+      n++; const {p,sansFiche}=await classerLigne(x.designation, L.designation, nouveaux, cpt);
       rows.push({entreprise_id:ent,lot_id:lot.id,numero:x.numero,designation:x.designation,unite:x.unite,quantite:x.quantite,produit_id:p?p.id:null,sans_fiche:sansFiche,ordre:j});
     }
     await q(sb.from("lignes_devis").insert(rows));
@@ -826,7 +848,7 @@ async function importDevis(){
   if(!c.designation_travaux && (E.objet||E.numero)) upd.designation_travaux=[E.objet&&norm(E.objet)!==norm(c.nom)?E.objet:"", E.numero?"Devis "+E.numero+(E.date?" du "+E.date:""):""].filter(Boolean).join(" — ");
   if(Object.keys(upd).length){ const [c2]=await q(sb.from("chantiers").update(upd).eq("id",ch).select()); if(c2) majChantierLocal(c2); }
   S.pdfEntete=null;
-  toast(`${n} lignes : ${m} produits reconnus, ${crees} créés, ${presta} prestations sans fiche`);
+  toast(`${n} lignes : ${cpt.m} produits reconnus, ${cpt.crees} créés, ${cpt.presta} prestations sans fiche`);
   await loadBiblio(); await loadChantierData(); S.tab="pieces"; render();
 }
 
@@ -1306,6 +1328,7 @@ document.addEventListener("click",async e=>{
     else if(a==="del-prod-no"){ S.delProd=null; render(); }
     else if(a==="ligne-creer"){ S.creerPour=b.dataset.id; render(); const n=$("#cl-nom"); if(n) n.focus(); }
     else if(a==="ligne-creer-non"){ S.creerPour=null; render(); }
+    else if(a==="regler-lignes") await busy(b,reglerLignes);
     else if(a==="ligne-fiche") await busy(b,async()=>{ await q(sb.from("lignes_devis").update({sans_fiche:b.dataset.v==="1"}).eq("id",b.dataset.id)); await loadChantierData(); render(); toast(b.dataset.v==="1"?"Ligne marquée sans fiche":"Ligne remise à traiter"); });
     else if(a==="del-piece"){ S.delPiece=b.dataset.id; S.delProd=null; render(); }
     else if(a==="del-piece-no"){ S.delPiece=null; render(); }
