@@ -138,6 +138,9 @@ details summary{cursor:pointer;font-weight:600;color:var(--accent)}
 <div class="toast" id="toast" role="status"></div>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf-lib/1.17.1/pdf-lib.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script>
 /* ===================== CONFIG ===================== */
 const SB_URL = "https://ngsokjiivtukcnpkggtz.supabase.co";
@@ -324,7 +327,7 @@ function tabDevis(){
       <h2>Import du devis</h2>
       <div class="hint">Colle tes lignes depuis Excel ou Obat : N° · Désignation · Unité · Quantité (tabulation ou point-virgule). Une ligne sans unité = titre de lot.</div>
       ${S.produits.length?"":`<div class="confirm" style="background:var(--warn-soft)">Ta bibliothèque est vide : aucun produit ne sera reconnu. <button class="link" data-act="biblio">Ouvrir la bibliothèque</button></div>`}
-      <textarea id="devis" spellcheck="false" placeholder="1;PLÂTRERIE;;&#10;1.1;Cloison 72/48 BA13;m²;84"></textarea>
+      <textarea id="devis" spellcheck="false" placeholder="Colle ici les lignes de ton devis…"></textarea>
       <div class="row"><button class="btn" data-act="import">Importer le devis</button><button class="btn ghost" data-act="exemple">Coller l'exemple</button></div>
     </div>`;
   const nb=S.lots.reduce((a,l)=>a+l.lignes_devis.length,0), ok=S.lots.reduce((a,l)=>a+l.lignes_devis.filter(x=>x.produit_id).length,0);
@@ -493,7 +496,9 @@ function tabDOE(){
           </div>
           <button class="btn" type="submit">Enregistrer</button>
         </form></details>
-      <div class="row"><button class="btn" data-act="print-att">Imprimer / PDF des attestations</button></div>
+      <div class="row"><button class="btn" data-act="doe-complet">Générer le DOE complet (PDF)</button><button class="btn ghost" data-act="print-att">Imprimer les attestations seules</button></div>
+      <div class="hint">Le DOE complet réunit dans un seul PDF : page de garde, sommaire, identification, matériaux mis en œuvre, attestations de pose, photos, puis toutes les fiches techniques et tous les PV en annexe.</div>
+      ${S.doeLog?`<div class="bulk-log" id="doe-log">${esc(S.doeLog)}</div>`:""}
     </div>
     <div id="atts" class="list">${atts}</div>
     <div class="row between"><h2>Aperçu du DOE</h2><button class="btn" data-act="print">Imprimer / PDF du DOE</button></div>
@@ -635,6 +640,127 @@ async function creerProduit({nom,dtu,four,mots,pieces}){
   const [p]=await q(sb.from("produits").insert({entreprise_id:S.ent.id,nom,dtu:dtu||null,fournisseur_id:fid,mots_cles:mots}).select());
   if(pieces.length) await q(sb.from("pieces_requises").insert(pieces.map((l,i)=>({entreprise_id:S.ent.id,produit_id:p.id,libelle:l,ordre:i}))));
 }
+/* ===================== DOE COMPLET (PDF unique) ===================== */
+const A4W=794, A4H=1123;
+function pageHTML(inner, num, total){
+  const e=S.ent, c=S.ch;
+  return `<div class="pg" style="width:${A4W}px;height:${A4H}px;box-sizing:border-box;padding:56px 60px 70px;background:#fff;color:#111;font-family:Arial,Helvetica,sans-serif;font-size:13px;line-height:1.45;position:relative;overflow:hidden">
+    <div style="display:flex;justify-content:space-between;font-size:10.5px;color:#555;border-bottom:1px solid #999;padding-bottom:6px;margin-bottom:22px"><span>DOE — ${esc(e.nom)}</span><span>${esc(c.nom)}</span></div>
+    ${inner}
+    <div style="position:absolute;left:60px;right:60px;bottom:28px;display:flex;justify-content:space-between;font-size:10px;color:#666;border-top:1px solid #bbb;padding-top:6px"><span>${esc(e.nom)}${e.siret?" – SIRET "+esc(e.siret):""}</span><span>Page ${num} sur ${total}</span></div>
+  </div>`;
+}
+const H2=t=>`<div style="font-size:17px;font-weight:700;margin:6px 0 12px;color:#1a2b4a">${t}</div>`;
+const TB=`style="width:100%;border-collapse:collapse;font-size:12px"`;
+const TD=(t,w)=>`<td style="border:1px solid #888;padding:5px 7px;vertical-align:top${w?";width:"+w:""}">${t}</td>`;
+const TH=(t,w)=>`<td style="border:1px solid #888;padding:5px 7px;background:#e9edf3;font-weight:700${w?";width:"+w:""}">${t}</td>`;
+
+async function genererDOE(){
+  const log=m=>{ S.doeLog=(S.doeLog||"")+m+"\n"; const el=$("#doe-log"); if(el){ el.textContent=S.doeLog; el.scrollTop=1e9; } };
+  S.doeLog=""; render(); log("Préparation du DOE…");
+  if(!window.PDFLib||!window.html2canvas||!window.jspdf){ log("✗ Bibliothèques PDF non chargées : recharge la page."); return; }
+  await loadChantierData();
+  const c=S.ch, e=S.ent, byL=rowsByLigne();
+
+  // 1. Annexes : documents joints, sans doublons, dans l'ordre du devis
+  const annexes=[], vus=new Set();
+  S.lots.forEach(l=>l.lignes_devis.forEach(li=>(byL[li.id]||[]).forEach(r=>{
+    if(r.statut==="en_bibliotheque" && r.storage_path && !vus.has(r.storage_path)){ vus.add(r.storage_path);
+      annexes.push({path:r.storage_path,titre:`${r.produit_nom} — ${r.piece_libelle}`,lot:l.numero}); }
+  })));
+  log(`${annexes.length} document(s) à joindre en annexe.`);
+  const annexPdfs=[];
+  for(const [i,a] of annexes.entries()){
+    try{
+      const {data,error}=await sb.storage.from("documents").createSignedUrl(a.path,600); if(error) throw error;
+      const bytes=await (await fetch(data.signedUrl)).arrayBuffer();
+      const pdf=await PDFLib.PDFDocument.load(bytes,{ignoreEncryption:true});
+      annexPdfs.push({...a,pdf,pages:pdf.getPageCount()}); log(`✓ Annexe ${i+1} : ${a.titre} (${pdf.getPageCount()} p.)`);
+    }catch(err){ log(`✗ Annexe ignorée : ${a.titre} (${err.message||err})`); }
+  }
+
+  // 2. Matériaux mis en œuvre
+  const mats=[]; const vuP=new Set();
+  S.lots.forEach(l=>l.lignes_devis.forEach(li=>{ const rs=(byL[li.id]||[]).filter(r=>r.produit_id); if(!rs.length) return; const r0=rs[0];
+    const k=l.numero+"|"+r0.produit_id; if(vuP.has(k)) return; vuP.add(k);
+    mats.push({lot:`${l.numero} ${l.designation}`,produit:r0.produit_nom,four:r0.fournisseur_nom||"",dtu:r0.dtu||"",docs:[...new Set(rs.filter(r=>r.piece_libelle).map(r=>r.piece_libelle+(r.statut==="en_bibliotheque"?"":" (manquant)")))].join(", ")}); }));
+  const matChunks=[]; for(let i=0;i<Math.max(mats.length,1);i+=18) matChunks.push(mats.slice(i,i+18));
+
+  // 3. Photos
+  const photoLots=S.lots.filter(l=>(S.photos[l.id]||[]).length);
+  const photoPages=[]; photoLots.forEach(l=>{ const ph=S.photos[l.id]; for(let i=0;i<ph.length;i+=6) photoPages.push({l,ph:ph.slice(i,i+6)}); });
+
+  // 4. Pagination
+  const nDossier=3+matChunks.length+S.lots.length+photoPages.length;
+  let p=nDossier+1; annexPdfs.forEach(a=>{ a.debut=p; p+=a.pages; });
+  const total=p-1;
+  const pMat=4, pAtt=4+matChunks.length, pPhoto=pAtt+S.lots.length, pAnn=nDossier+1;
+
+  // 5. Pages du dossier
+  const pages=[];
+  pages.push(`<div style="width:${A4W}px;height:${A4H}px;box-sizing:border-box;padding:90px 70px;background:#fff;color:#111;font-family:Arial,Helvetica,sans-serif;display:flex;flex-direction:column;justify-content:space-between">
+    <div><div style="font-size:14px;letter-spacing:.2em;color:#555">${esc(e.nom)}</div>
+      <div style="margin-top:160px;font-size:15px;letter-spacing:.25em;color:#1a2b4a;font-weight:700">DOSSIER DES OUVRAGES EXÉCUTÉS</div>
+      <div style="font-size:38px;font-weight:800;margin-top:14px;line-height:1.1">${esc(c.nom)}</div>
+      <div style="font-size:16px;margin-top:12px;color:#333">${esc(c.designation_travaux||"")}</div>
+      <div style="width:90px;height:4px;background:#1a2b4a;margin-top:26px"></div>
+      <table style="margin-top:40px;font-size:14px;border-collapse:collapse">
+        <tr><td style="padding:4px 18px 4px 0;color:#555">Adresse</td><td>${esc(c.adresse||"—")}</td></tr>
+        <tr><td style="padding:4px 18px 4px 0;color:#555">Maître d'ouvrage</td><td>${esc(c.maitre_ouvrage||"—")}</td></tr>
+        <tr><td style="padding:4px 18px 4px 0;color:#555">Maître d'œuvre</td><td>${esc(c.maitre_oeuvre||"—")}</td></tr>
+        <tr><td style="padding:4px 18px 4px 0;color:#555">Réception</td><td>${frDate(c.date_reception)}</td></tr></table></div>
+    <div style="font-size:12px;color:#444;border-top:1px solid #999;padding-top:10px">${esc(e.nom)}${e.adresse?" — "+esc(e.adresse):""}${e.siret?"<br>SIRET "+esc(e.siret):""}<br>Édité le ${new Date().toLocaleDateString("fr-FR")}</div></div>`);
+  const ligneSom=(t,pg,ind)=>`<div style="display:flex;gap:8px;padding:5px 0;${ind?"padding-left:22px;font-size:12px":"font-weight:700"}"><span>${t}</span><span style="flex:1;border-bottom:1px dotted #999;transform:translateY(-4px)"></span><span>${pg}</span></div>`;
+  let som=H2("Sommaire")+ligneSom("A. Identification du chantier",3)+ligneSom("B. Matériaux mis en œuvre",pMat)+ligneSom("C. Attestations de pose",pAtt)
+    +S.lots.map((l,i)=>ligneSom(`${esc(l.numero)} ${esc(l.designation)}`,pAtt+i,1)).join("")
+    +(photoPages.length?ligneSom("D. Photos de fin de travaux",pPhoto):"")
+    +ligneSom(`${photoPages.length?"E":"D"}. Annexes — fiches techniques et PV`,annexPdfs.length?pAnn:"—")
+    +annexPdfs.slice(0,22).map((a,i)=>ligneSom(`Annexe ${i+1} — ${esc(a.titre)}`,a.debut,1)).join("")
+    +(annexPdfs.length>22?`<div style="font-size:12px;padding-left:22px">… et ${annexPdfs.length-22} autres annexes (liste en page ${pMat}).</div>`:"");
+  pages.push(pageHTML(som,2,total));
+  pages.push(pageHTML(H2("A. Identification du chantier")+`<table ${TB}>
+    <tr>${TH("Maître d'ouvrage","35%")}${TD(esc(c.maitre_ouvrage||""))}</tr><tr>${TH("Maître d'œuvre")}${TD(esc(c.maitre_oeuvre||""))}</tr>
+    <tr>${TH("Désignation des travaux")}${TD(esc(c.designation_travaux||c.nom))}</tr><tr>${TH("Lieu des travaux")}${TD(esc(c.adresse||""))}</tr>
+    <tr>${TH("Période des travaux")}${TD(esc([c.date_debut,c.date_fin].filter(Boolean).join(" → ")||""))}</tr><tr>${TH("Date de réception")}${TD(frDate(c.date_reception))}</tr>
+    <tr>${TH("Montant HT des travaux")}${TD(esc(euros(c.montant_ht)))}</tr></table>
+    <div style="height:22px"></div>${H2("Entreprise")}<table ${TB}>
+    <tr>${TH("Raison sociale","35%")}${TD(esc(e.nom))}</tr><tr>${TH("Adresse")}${TD(esc(e.adresse||""))}</tr><tr>${TH("SIRET")}${TD(esc(e.siret||""))}</tr><tr>${TH("Signataire")}${TD(esc(c.signataire||S.nomAffiche||""))}</tr></table>
+    <div style="height:22px"></div>${H2("Lots réalisés")}<table ${TB}><tr>${TH("Lot","12%")}${TH("Désignation")}${TH("Lignes","14%")}</tr>
+    ${S.lots.map(l=>`<tr>${TD(esc(l.numero))}${TD(esc(l.designation))}${TD(l.lignes_devis.length)}</tr>`).join("")}</table>`,3,total));
+  matChunks.forEach((ch,i)=>pages.push(pageHTML((i?"":H2("B. Matériaux mis en œuvre"))+`<table ${TB}><tr>${TH("Lot","20%")}${TH("Produit","27%")}${TH("Fabricant","13%")}${TH("DTU","10%")}${TH("Documents")}</tr>
+    ${ch.map(m=>`<tr>${TD(esc(m.lot))}${TD(esc(m.produit))}${TD(esc(m.four))}${TD(esc(m.dtu))}${TD(esc(m.docs))}</tr>`).join("")||`<tr>${TD("Aucun produit associé",null)}</tr>`}</table>`
+    +(i===matChunks.length-1&&annexPdfs.length>22?`<div style="height:16px"></div>${H2("Liste des annexes")}${annexPdfs.map((a,j)=>`<div style="font-size:11px">Annexe ${j+1} — ${esc(a.titre)} … p. ${a.debut}</div>`).join("")}`:""),pMat+i,total)));
+  S.lots.forEach((l,i)=>{ const tmp=document.createElement("div"); tmp.innerHTML=attestationPose(l); const a=tmp.firstElementChild; a.style.border="0"; a.style.padding="0"; a.style.background="#fff";
+    pages.push(pageHTML(`<div style="font-size:11px;color:#555;margin-bottom:6px">C. Attestations de pose — lot ${esc(l.numero)}</div>`+a.outerHTML,pAtt+i,total)); });
+  photoPages.forEach((pp,i)=>pages.push(pageHTML(H2(`${photoPages.length?"D":""}. Photos — lot ${esc(pp.l.numero)} ${esc(pp.l.designation)}`)
+    +`<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">${pp.ph.map(x=>`<img crossorigin="anonymous" src="${esc(x.url)}" style="width:100%;height:290px;object-fit:cover;border:1px solid #ccc">`).join("")}</div>`,pPhoto+i,total)));
+
+  // 6. Rendu des pages en PDF
+  log(`Mise en page de ${pages.length} page(s) du dossier…`);
+  const host=document.createElement("div"); host.style.cssText="position:fixed;left:-10000px;top:0;width:"+A4W+"px"; document.body.appendChild(host);
+  const {jsPDF}=window.jspdf; const doc=new jsPDF({unit:"pt",format:"a4",compress:true});
+  for(const [i,h] of pages.entries()){
+    host.innerHTML=h; await Promise.all([...host.querySelectorAll("img")].map(im=>im.complete?1:new Promise(r=>{im.onload=im.onerror=r;})));
+    const cv=await html2canvas(host.firstElementChild,{scale:2,useCORS:true,backgroundColor:"#ffffff",width:A4W,height:A4H});
+    if(i) doc.addPage(); doc.addImage(cv.toDataURL("image/jpeg",0.88),"JPEG",0,0,595.28,841.89);
+  }
+  host.remove();
+
+  // 7. Fusion avec les annexes
+  log("Fusion des annexes…");
+  const final=await PDFLib.PDFDocument.load(doc.output("arraybuffer"));
+  for(const a of annexPdfs){ try{ const pgs=await final.copyPages(a.pdf,a.pdf.getPageIndices()); pgs.forEach(pg=>final.addPage(pg)); }catch(err){ log(`✗ Fusion impossible : ${a.titre}`); } }
+  final.setTitle(`DOE ${c.nom}`); final.setAuthor(e.nom);
+  const out=await final.save();
+  const blob=new Blob([out],{type:"application/pdf"}); const url=URL.createObjectURL(blob);
+  const nom=`DOE_${safeName(c.nom).toUpperCase()}.pdf`;
+  const lk=document.createElement("a"); lk.href=url; lk.download=nom; document.body.appendChild(lk); lk.click(); lk.remove();
+  log(`✓ ${nom} : ${final.getPageCount()} pages (${(out.length/1048576).toFixed(1)} Mo). Le fichier est dans tes Téléchargements.`);
+  // Archive dans Supabase
+  try{ const path=`${e.id}/chantiers/${c.id}/${Date.now()}-${nom}`; const {error}=await sb.storage.from("doe").upload(path,blob,{contentType:"application/pdf"});
+    if(!error){ await sb.from("doe_exports").insert({entreprise_id:e.id,chantier_id:c.id,storage_path:path,completude:stats().pct}); log("✓ Copie archivée dans DOE Auto (conservation 10 ans)."); } }catch(err){}
+}
+
 /* ---- Import groupé : nom de fichier → produit + type de pièce ---- */
 const MOTS_DOC = /\b(pv|feu|acoustique|fiche|fiches|technique|produit|ft|ftprod|fdes|fds|fichetechnique)\b/g;
 function analyseNom(fichier){
@@ -717,6 +843,7 @@ document.addEventListener("click",async e=>{
     else if(a==="seed") await busy(b,seedBiblio);
     else if(a==="print"){ document.body.dataset.print="doe"; window.print(); }
     else if(a==="print-att"){ document.body.dataset.print="att"; window.print(); }
+    else if(a==="doe-complet") await busy(b,genererDOE);
   }catch(err){}
 });
 document.addEventListener("keydown",e=>{ if(e.key==="Enter" && e.target.matches('[role="link"][data-act]')) e.target.click(); });
