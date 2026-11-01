@@ -595,6 +595,7 @@ function tabDOE(){
       </div>
       <div class="row"><button class="btn" data-act="doe-complet">Générer le DOE complet (PDF)</button><button class="btn ghost" data-act="print-att">Imprimer les attestations seules</button></div>
       <div class="hint">Le DOE complet réunit dans un seul PDF : page de garde, sommaire, identification, matériaux mis en œuvre, attestations de pose, photos, puis toutes les fiches techniques et tous les PV en annexe.</div>
+      ${S.doeUrl&&S.doeChantier===c.id?`<div class="row"><a class="btn" href="${S.doeUrl}" download="${esc(S.doeNom)}" target="_blank" rel="noopener">Télécharger le DOE (${esc(S.doeNom)})</a></div>`:""}
       ${S.doeLog?`<div class="bulk-log" id="doe-log">${esc(S.doeLog)}</div>`:""}
     </div>
     <div id="atts" class="list">${atts}</div>
@@ -676,7 +677,6 @@ function viewEntreprise(){
         ${F("tva","N° TVA intracommunautaire",e.tva)}${F("qualif","Qualifications",e.qualifications,"Qualibat")}
       </div>
       ${F("assur","Garantie décennale (assureur, adresse, couverture)",e.assurance)}
-      <label class="f">Coefficient de vente (prix d'achat × coefficient)<input type="text" id="e-coef" inputmode="decimal" value="${String(e.coef_vente??1.35).replace(".",",")}"></label>
       <button class="btn" type="submit" ${champs?"":"disabled"}>Enregistrer</button>
     </form>
     <div class="box"><h2>Aperçu du pied de page</h2><div class="hint" style="display:flex;flex-direction:column;gap:2px">${infosSociete(e).map(l=>`<span>${esc(l)}</span>`).join("")}</div></div>
@@ -686,21 +686,18 @@ function viewEntreprise(){
 /* ---- Prix d'achat ---- */
 function viewPrix(){
   if(S.prixErr==="manque") return `<section class="panel"><h1>Prix d'achat</h1>${MSG_SQL}</section>`;
-  const qq=norm(S.prixQ), fam=S.prixFam, k=coef();
+  const qq=norm(S.prixQ), fam=S.prixFam;
   const list=S.prix.filter(x=>(!fam||x.famille===fam)&&(!qq||norm([x.designation,x.marque,x.fournisseur,x.unite].join(" ")).includes(qq)));
   const chiffres=S.prix.filter(x=>x.prix_ht!=null).length, lies=S.prix.filter(x=>x.produit_id).length;
   const opts=pid=>`<option value="">—</option>`+S.produits.map(p=>`<option value="${p.id}" ${p.id===pid?"selected":""}>${esc(p.nom)}</option>`).join("");
   let rows="";
   [...FAMILLES, null].forEach(f=>{
     const g=list.filter(x=>f===null ? !FAMILLES.includes(x.famille) : x.famille===f); if(!g.length) return;
-    rows+=`<tr class="grp"><td colspan="7">${esc(f||"Autres")}</td></tr>`+g.map(x=>{
-      const ec=x.prix_ht!=null&&x.prix_public?Math.round((1-x.prix_ht/x.prix_public)*100):null;
+    rows+=`<tr class="grp"><td colspan="5">${esc(f||"Autres")}</td></tr>`+g.map(x=>{
       return `<tr>
         <td style="min-width:220px"><div>${esc(x.designation)}</div><div class="m">${esc([x.marque,x.fournisseur].filter(Boolean).join(" · "))}${x.date_prix?" · "+frDate(x.date_prix):""}</div>${x.note?`<div class="m">${esc(x.note)}</div>`:""}</td>
         <td>${esc(x.unite||"")}</td>
         <td class="n"><input class="pcell ${x.prix_ht==null?"vide":""}" id="px-${x.id}" data-prix="${x.id}" inputmode="decimal" value="${x.prix_ht!=null?String(+x.prix_ht).replace(".",","):""}" placeholder="à saisir" aria-label="Prix HT ${esc(x.designation)}"></td>
-        <td class="n">${x.prix_public!=null?eur2(x.prix_public):"—"}${ec!=null&&ec>0?`<div class="m">−${ec} %</div>`:""}</td>
-        <td class="n">${x.prix_ht!=null?eur2(x.prix_ht*k):"—"}</td>
         <td><select data-prixprod="${x.id}" id="pp-${x.id}" aria-label="Produit DOE lié">${opts(x.produit_id)}</select></td>
         <td>${S.prixDel===x.id?`<span class="row"><button class="btn danger small" data-act="prix-del-yes" data-id="${x.id}">Supprimer</button><button class="btn ghost small" data-act="prix-del-no">Annuler</button></span>`:`<button class="link" data-act="prix-del" data-id="${x.id}" aria-label="Supprimer">✕</button>`}</td>
       </tr>`;}).join("");
@@ -711,10 +708,10 @@ function viewPrix(){
     <div class="box">
       <div class="row"><input type="text" id="prix-q" placeholder="Chercher un produit, une marque, un fournisseur…" value="${esc(S.prixQ)}" style="flex:1 1 220px">
         <select id="prix-fam" style="flex:0 1 220px"><option value="">Toutes les familles</option>${FAMILLES.map(f=>`<option ${f===fam?"selected":""}>${f}</option>`).join("")}</select></div>
-      <div class="hint">Saisis ton prix net HT dans la case verte : il est enregistré à la sortie du champ, avec la date du jour. « Vente HT » applique ton coefficient (${String(k).replace(".",",")}, réglable dans Entreprise). Lie un prix à un produit de la bibliothèque pour voir le coût matière dans l'onglet Devis des chantiers.</div>
+      <div class="hint">Saisis ton prix net HT dans la case verte : il est enregistré à la sortie du champ, avec la date du jour. Lie un prix à un produit de la bibliothèque pour voir le coût matière dans l'onglet Devis des chantiers.</div>
     </div>
-    <div class="tscroll"><table class="ptable"><thead><tr><th>Produit</th><th>Unité</th><th class="n">Mon prix HT</th><th class="n">Prix public</th><th class="n">Vente HT</th><th>Produit DOE lié</th><th></th></tr></thead>
-      <tbody>${rows||`<tr><td colspan="7" class="empty">${S.prix.length?"Aucun prix ne correspond à ta recherche.":"Aucun prix pour l'instant. Ajoute le premier ci-dessous."}</td></tr>`}</tbody></table></div>
+    <div class="tscroll"><table class="ptable"><thead><tr><th>Produit</th><th>Unité</th><th class="n">Mon prix HT</th><th>Produit DOE lié</th><th></th></tr></thead>
+      <tbody>${rows||`<tr><td colspan="5" class="empty">${S.prix.length?"Aucun prix ne correspond à ta recherche.":"Aucun prix pour l'instant. Ajoute le premier ci-dessous."}</td></tr>`}</tbody></table></div>
     <details class="box"><summary>Ajouter un prix</summary>
       <form data-form="prix" style="display:flex;flex-direction:column;gap:12px;margin-top:12px">
         <div class="grid3">
@@ -863,9 +860,21 @@ const TB=`style="width:100%;border-collapse:collapse;font-size:12px"`;
 const TD=(t,w)=>`<td style="border:1px solid #888;padding:5px 7px;vertical-align:top${w?";width:"+w:""}">${t}</td>`;
 const TH=(t,w)=>`<td style="border:1px solid #888;padding:5px 7px;background:#e9edf3;font-weight:700${w?";width:"+w:""}">${t}</td>`;
 
+/* Annexe : PDF tel quel, ou image (PNG/JPEG) placée sur une page A4 */
+async function annexeEnPdf(bytes){
+  const u=new Uint8Array(bytes.slice(0,4));
+  const png=u[0]===0x89&&u[1]===0x50, jpg=u[0]===0xFF&&u[1]===0xD8;
+  if(!png&&!jpg) return await PDFLib.PDFDocument.load(bytes,{ignoreEncryption:true});
+  const doc=await PDFLib.PDFDocument.create();
+  const img=png?await doc.embedPng(bytes):await doc.embedJpg(bytes);
+  const W=595.28,H=841.89,m=30, s=Math.min((W-2*m)/img.width,(H-2*m)/img.height);
+  const page=doc.addPage([W,H]); page.drawImage(img,{x:(W-img.width*s)/2,y:(H-img.height*s)/2,width:img.width*s,height:img.height*s});
+  return doc;
+}
 async function genererDOE(){
   const log=m=>{ S.doeLog=(S.doeLog||"")+m+"\n"; const el=$("#doe-log"); if(el){ el.textContent=S.doeLog; el.scrollTop=1e9; } };
-  S.doeLog=""; render(); log("Préparation du DOE…");
+  S.doeLog=""; if(S.doeUrl){ URL.revokeObjectURL(S.doeUrl); S.doeUrl=null; } S.doeChantier=S.ch.id; render(); log("Préparation du DOE…");
+  window.onerror=(m)=>log("✗ Erreur : "+m);
   if(!window.PDFLib||!window.html2canvas||!window.jspdf){ log("✗ Bibliothèques PDF non chargées : recharge la page."); return; }
   await loadChantierData();
   const c=S.ch, e=S.ent, byL=rowsByLigne();
@@ -882,7 +891,7 @@ async function genererDOE(){
     try{
       const {data,error}=await sb.storage.from("documents").createSignedUrl(a.path,600); if(error) throw error;
       const bytes=await (await fetch(data.signedUrl)).arrayBuffer();
-      const pdf=await PDFLib.PDFDocument.load(bytes,{ignoreEncryption:true});
+      const pdf=await annexeEnPdf(bytes);
       annexPdfs.push({...a,pdf,pages:pdf.getPageCount()}); log(`✓ Annexe ${i+1} : ${a.titre} (${pdf.getPageCount()} p.)`);
     }catch(err){ log(`✗ Annexe ignorée : ${a.titre} (${err.message||err})`); }
   }
@@ -980,11 +989,13 @@ async function genererDOE(){
   const out=await final.save();
   const blob=new Blob([out],{type:"application/pdf"}); const url=URL.createObjectURL(blob);
   const nom=`DOE_${safeName(c.nom).toUpperCase()}.pdf`;
-  const lk=document.createElement("a"); lk.href=url; lk.download=nom; document.body.appendChild(lk); lk.click(); lk.remove();
-  log(`✓ ${nom} : ${final.getPageCount()} pages (${(out.length/1048576).toFixed(1)} Mo). Le fichier est dans tes Téléchargements.`);
+  S.doeUrl=url; S.doeNom=nom;
+  try{ const lk=document.createElement("a"); lk.href=url; lk.download=nom; document.body.appendChild(lk); lk.click(); lk.remove(); }catch(err){}
+  log(`✓ ${nom} : ${final.getPageCount()} pages (${(out.length/1048576).toFixed(1)} Mo). Si le téléchargement n'a pas démarré, clique sur « Télécharger le DOE ».`);
   // Archive dans Supabase
   try{ const path=`${e.id}/chantiers/${c.id}/${Date.now()}-${nom}`; const {error}=await sb.storage.from("doe").upload(path,blob,{contentType:"application/pdf"});
     if(!error){ await sb.from("doe_exports").insert({entreprise_id:e.id,chantier_id:c.id,storage_path:path,completude:stats().pct}); log("✓ Copie archivée dans DOE Auto (conservation 10 ans)."); } }catch(err){}
+  render();
 }
 
 /* ---- Import groupé : nom de fichier → produit + type de pièce ---- */
@@ -1069,7 +1080,7 @@ document.addEventListener("click",async e=>{
     else if(a==="seed") await busy(b,seedBiblio);
     else if(a==="print"){ document.body.dataset.print="doe"; window.print(); }
     else if(a==="print-att"){ document.body.dataset.print="att"; window.print(); }
-    else if(a==="doe-complet") await busy(b,genererDOE);
+    else if(a==="doe-complet") await busy(b,async()=>{ try{ await genererDOE(); }catch(err){ S.doeLog=(S.doeLog||"")+"✗ Génération interrompue : "+(err&&err.message||err)+"\n"; render(); } });
     else if(a==="entreprise"){ S.view="entreprise"; render(); }
     else if(a==="prix"){ S.view="prix"; $("#app").innerHTML=`<div class="loading">Chargement des prix…</div>`; await loadBiblio(); await loadPrix(); render(); }
     else if(a==="prix-del"){ S.prixDel=b.dataset.id; render(); }
@@ -1158,11 +1169,9 @@ document.addEventListener("submit",async e=>{
     }
     if(k==="entreprise"){
       const v=id=>$("#e-"+id).value.trim()||null;
-      const cf=Number(String($("#e-coef").value).replace(",","."));
       if(!v("nom")) return toast("La raison sociale est obligatoire");
-      if(!(cf>=1&&cf<10)) return toast("Coefficient invalide : écris par exemple 1,35");
       const upd={nom:v("nom"),forme_juridique:v("forme"),capital:v("capital"),siret:v("siret"),adresse:v("adresse"),code_postal:v("cp"),ville:v("ville"),
-        telephone:v("tel"),email:v("email"),site_web:v("web"),rcs:v("rcs"),ape:v("ape"),tva:v("tva"),qualifications:v("qualif"),assurance:v("assur"),coef_vente:cf};
+        telephone:v("tel"),email:v("email"),site_web:v("web"),rcs:v("rcs"),ape:v("ape"),tva:v("tva"),qualifications:v("qualif"),assurance:v("assur")};
       await q(sb.from("entreprises").update(upd).eq("id",S.ent.id));
       await loadEntreprise(); render(); toast("Entreprise enregistrée");
     }
