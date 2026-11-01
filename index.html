@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>DOE Auto</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@600;800&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@600;700;800&family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
 <style>
 :root{
   --bg:#eef1f4; --surface:#ffffff; --ink:#18212b; --muted:#5b6876; --line:#d5dbe2;
@@ -123,7 +123,8 @@ details summary{cursor:pointer;font-weight:600;color:var(--accent)}
 .pv{position:relative;width:100%;max-width:420px;aspect-ratio:794/1123;overflow:hidden;border:1px solid var(--line);border-radius:4px;background:#fff;box-shadow:0 8px 24px -16px rgba(0,0,0,.3)}
 .pv>div{position:absolute;left:0;top:0;transform-origin:0 0}
 .ent-grid{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,340px);gap:16px;align-items:start}
-@media (max-width:760px){.ent-grid{grid-template-columns:1fr}}
+.ent-grid.garde{grid-template-columns:minmax(0,1fr) minmax(0,260px)}
+@media (max-width:760px){.ent-grid,.ent-grid.garde{grid-template-columns:minmax(0,1fr)}}
 .media{display:flex;gap:12px;align-items:center;flex-wrap:wrap}
 .media .thumb{width:120px;height:72px;border:1px solid var(--line);border-radius:6px;background:var(--paper) center/contain no-repeat;flex:none}
 .media .thumb.cov{background-size:cover}
@@ -230,6 +231,37 @@ function parseDevis(txt){
   return lots;
 }
 
+/* ===================== INTITULÉS HARMONISÉS ===================== */
+/* Affichage seulement : la base garde le texte d'origine. Sigles en capitales, marques avec leur graphie, le reste en minuscules, première lettre en capitale. */
+const SIGLES=new Set("pv ft fds fdes dtu pse pvc mdf acermi upec ce nf ei rei cf tlp lvt osb hpl ba sti stil ral ts atec dta avis".split(" "));
+const MARQUES={siniat:"Siniat",placo:"Placo",placoplatre:"Placoplâtre",knauf:"Knauf",isover:"Isover",rockwool:"Rockwool",ursa:"Ursa",gerflor:"Gerflor",tarkett:"Tarkett",forbo:"Forbo",tiaso:"Tiaso",udirev:"Udirev",maestria:"Maestria",aqualine:"Aqualine",unistop:"Unistop",seigneurie:"Seigneurie",tollens:"Tollens",zolpan:"Zolpan",sikkens:"Sikkens",weber:"Weber",mapei:"Mapei",armstrong:"Armstrong",ecophon:"Ecophon",rockfon:"Rockfon",eurocoustic:"Eurocoustic",liberty:"Liberty",original:"Original",evo:"Evo",aqua:"Aqua",reguini:"Reguini",stil:"Stil"};
+const MOTS_COURANTS=new Set(("fiche fiches technique techniques produit produits plaque plaques plâtre platre cloison cloisons doublage isolant isolation porte portes bloc bloc-porte peinture peintures plinthe plinthes sol sols revêtement revetement dalle dalles ossature ossatures enduit enduits joint joints bande bandes laine minérale minerale verre roche feu acoustique de du des la le les l d et en à a pour sur avec sans intérieur interieur intérieure extérieur mate satin velours vitrée vitree alu aluminium châssis chassis cadre stratifié stratifie strat résine resine ferme-porte ferme-portes notice pose certificat classement entretien données donnees sécurité securite résistance resistance réaction reaction procès-verbal proces verbal rail rails montant montants fourrure fourrures cornière corniere vis colle mortier ragréage ragreage primaire impression sous-couche finition demi environnementale sanitaire déclaration declaration performance performances haute hydro hydrofuge phonique thermique").split(" "));
+function harmoniser(txt){
+  const t=String(txt||"").replace(/\s+/g," ").trim(); if(!t) return t;
+  const lettres=t.replace(/[^A-Za-zÀ-ÿ]/g,""), plat=lettres===lettres.toUpperCase()||lettres===lettres.toLowerCase();
+  let out=t.split(/(\s+|\s-\s|\/|\(|\))/).map(m=>{
+    if(!m||/^\s|^[\/()]$/.test(m)) return m;
+    const k=norm(m).replace(/[^a-z0-9-]/g,""), base=m.toLowerCase();
+    if(/\d/.test(m)) return m.toUpperCase().replace(/(\d)(MM|CM|M)\b/g,(x,d,u)=>d+u.toLowerCase());
+    if(/^(mm|cm|m|m2|m²|m3|ml|kg|l|db)$/.test(k)) return k==="db"?"dB":base;
+    if(SIGLES.has(k)) return m.toUpperCase();
+    if(MARQUES[k]) return MARQUES[k];
+    if(plat || MOTS_COURANTS.has(k) || MOTS_COURANTS.has(norm(m))) return base;
+    return m; // nom propre déjà bien écrit, on n'y touche pas
+  }).join("");
+  return out.charAt(0).toUpperCase()+out.slice(1);
+}
+/* Noms de produits : on retire le type de document collé devant (« Fiche technique Gerflor… » → « Gerflor… ») */
+function harmoniserProduit(txt){
+  const h=harmoniser(txt), r=h.replace(/^(fiche technique|fiche produit|fiches techniques|ft|pv)\s*[-–:]?\s+/i,"");
+  return r ? r.charAt(0).toUpperCase()+r.slice(1) : h;
+}
+/* Libellés de pièces : vocabulaire fixe */
+function harmoniserPiece(txt){
+  const h=harmoniser(txt);
+  return h.replace(/^Pv\b/,"PV").replace(/^Fiche technique\b/i,"Fiche technique").replace(/^Fds\b/i,"FDS").replace(/^Fdes\b/i,"FDES");
+}
+
 /* ===================== CHARGEMENTS ===================== */
 async function loadEntreprise(){
   const rows=await q(sb.from("membres").select("role,nom_affiche,entreprise_id,entreprises(*)").eq("user_id",S.user.id).limit(1));
@@ -279,13 +311,14 @@ async function loadChantiers(){ S.chantiers=await q(sb.from("chantiers").select(
 async function loadBiblio(){
   S.fourn=await q(sb.from("fournisseurs").select("*").order("nom"));
   S.produits=await q(sb.from("produits").select("*, fournisseurs(id,nom,email), pieces_requises(id,libelle,ordre, documents(id,nom_fichier,storage_path,date_validite,created_at))").order("nom"));
-  S.produits.forEach(p=>p.pieces_requises.sort((a,b)=>a.ordre-b.ordre));
+  S.produits.forEach(p=>{ p.pieces_requises.sort((a,b)=>a.ordre-b.ordre); p.nom=harmoniserProduit(p.nom); p.pieces_requises.forEach(r=>r.libelle=harmoniserPiece(r.libelle)); });
 }
 async function loadChantierData(){
   const id=S.ch.id;
   S.lots=await q(sb.from("lots").select("*, lignes_devis(*)").eq("chantier_id",id).order("ordre"));
-  S.lots.forEach(l=>l.lignes_devis.sort((a,b)=>a.ordre-b.ordre));
+  S.lots.forEach(l=>{ l.lignes_devis.sort((a,b)=>a.ordre-b.ordre); l.designation=harmoniser(l.designation); });
   S.rows=await q(sb.from("v_pieces_chantier").select("*").eq("chantier_id",id));
+  S.rows.forEach(r=>{ r.produit_nom=harmoniserProduit(r.produit_nom); r.piece_libelle=harmoniserPiece(r.piece_libelle); });
   S.photos={};
   if(S.lots.length){
     const ph=await q(sb.from("photos").select("*").in("lot_id",S.lots.map(l=>l.id)).order("created_at"));
@@ -534,10 +567,10 @@ function tabDOE(){
   const atts=S.lots.map(l=>attestationPose(l)).join("");
   const miss=[!c.maitre_ouvrage&&"maître d'ouvrage",!c.designation_travaux&&"désignation des travaux",!c.date_debut&&"date de début",!c.date_fin&&"date de fin",(c.montant_ht==null)&&"montant HT"].filter(Boolean);
   const chCov=mediaUrl(c.couverture_path), entCov=mediaUrl(e.couverture_path);
-  const garde=pageGarde(c,e,{logo:mediaUrl(e.logo_path),cover:chCov||entCov});
+  const garde=pageGarde(c,e,{logo:mediaUrl(e.logo_path),cover:chCov||entCov,lots:S.lots});
   return `<div class="box">
       <div class="row between"><h2>Page de garde</h2><button class="link" data-act="entreprise">Modifier les infos société</button></div>
-      <div class="ent-grid" style="grid-template-columns:minmax(0,1fr) minmax(0,260px)">
+      <div class="ent-grid garde">
         <div style="display:flex;flex-direction:column;gap:10px">
           <div class="hint">Logo, coordonnées et mentions légales viennent de la page Entreprise. La photo de couverture peut être propre à ce chantier.</div>
           <div class="media"><div class="thumb cov" style="${chCov||entCov?`background-image:url('${chCov||entCov}')`:""}"></div>
@@ -803,45 +836,70 @@ async function creerProduit({nom,dtu,four,mots,pieces}){
 }
 /* ===================== DOE COMPLET (PDF unique) ===================== */
 const A4W=794, A4H=1123;
+const PF=`'IBM Plex Sans',Arial,sans-serif`, PFT=`Archivo,'IBM Plex Sans',Arial,sans-serif`;
+/* Charge les polices avant html2canvas, sinon il dessine en police de secours */
+async function chargerPolices(){
+  try{ await Promise.all(["400","500","600","700"].map(w=>document.fonts.load(`${w} 14px 'IBM Plex Sans'`)).concat(["700","800"].map(w=>document.fonts.load(`${w} 30px Archivo`)))); await document.fonts.ready; }catch(e){}
+}
 function pageHTML(inner, num, total){
   const e=S.ent, c=S.ch;
-  return `<div class="pg" style="width:${A4W}px;height:${A4H}px;box-sizing:border-box;padding:56px 60px 70px;background:#fff;color:#111;font-family:Arial,Helvetica,sans-serif;font-size:13px;line-height:1.45;position:relative;overflow:hidden">
+  return `<div class="pg" style="width:${A4W}px;height:${A4H}px;box-sizing:border-box;padding:56px 60px 70px;background:#fff;color:#111;font-family:${PF};font-size:13px;line-height:1.45;position:relative;overflow:hidden">
     <div style="display:flex;justify-content:space-between;font-size:10.5px;color:#555;border-bottom:1px solid #999;padding-bottom:6px;margin-bottom:22px"><span>DOE — ${esc(e.nom)}</span><span>${esc(c.nom)}</span></div>
     ${inner}
     <div style="position:absolute;left:60px;right:60px;bottom:28px;display:flex;justify-content:space-between;font-size:10px;color:#666;border-top:1px solid #bbb;padding-top:6px"><span>${esc(piedSociete(e))}</span><span>Page ${num} sur ${total}</span></div>
   </div>`;
 }
-/* Page de garde : logo, titre, photo de couverture, chantier, bloc société. m = {logo, cover} en data URL. */
-function monogramme(e,col){
+function monogramme(e,col,taille=56,txt="#18212b"){
   const ini=(String(e.nom||"?").trim()[0]||"?").toUpperCase();
-  return `<div style="display:flex;align-items:center;gap:14px">
-    <div style="width:62px;height:62px;border-radius:12px;background:${col};color:#fff;font-weight:800;font-size:40px;line-height:62px;text-align:center">${esc(ini)}</div>
-    <div style="font-size:27px;font-weight:800;letter-spacing:2px;color:#18212b">${esc(String(e.nom||"").toUpperCase())}</div></div>`;
+  return `<div style="display:flex;align-items:center;gap:${Math.round(taille/4)}px">
+    <div style="width:${taille}px;height:${taille}px;border-radius:${Math.round(taille/5)}px;background:${col};color:#fff;font-weight:800;font-size:${Math.round(taille*.64)}px;line-height:${taille}px;text-align:center">${esc(ini)}</div>
+    <div style="font-size:${Math.round(taille*.42)}px;font-weight:800;letter-spacing:2px;color:${txt}">${esc(String(e.nom||"").toUpperCase())}</div></div>`;
 }
+/* Assombrit/éclaircit une couleur #rrggbb (f<0 assombrit) */
+function teinte(hex,f){ const n=parseInt(hex.slice(1),16); const ch=s=>{ const v=(n>>s)&255; return Math.round(f<0?v*(1+f):v+(255-v)*f); };
+  return "#"+[16,8,0].map(s=>ch(s).toString(16).padStart(2,"0")).join(""); }
+/* Page de garde : en-tête logo, bloc titre, photo en encart, fiche chantier, lots, bloc société. m = {logo, cover, lots} */
 function pageGarde(c,e,m={}){
-  const col=/^#[0-9a-f]{6}$/i.test(e.couleur||"")?e.couleur:"#1f4fa3", L=lignesSociete(e);
-  const logo=m.logo?`<img src="${m.logo}" alt="" style="max-height:72px;max-width:320px;display:block">`:monogramme(e,col);
-  const info=(k,v)=>`<div><div style="font-size:10.5px;letter-spacing:1.5px;text-transform:uppercase;color:#6b7280">${k}</div><div style="font-size:14px;margin-top:3px;font-weight:600">${esc(v||"—")}</div></div>`;
-  return `<div style="width:${A4W}px;height:${A4H}px;box-sizing:border-box;padding:54px 64px 44px;background:#fff;color:#111;font-family:Arial,Helvetica,sans-serif;display:flex;flex-direction:column">
-    <div style="display:flex;justify-content:space-between;align-items:center;gap:20px">${logo}
-      <div style="text-align:right;font-size:11px;color:#4b5563;line-height:1.6">${[e.telephone,e.email,e.site_web].filter(Boolean).map(esc).join("<br>")}</div></div>
-    <div style="height:3px;background:${col};margin-top:20px"></div>
-    <div style="margin-top:${m.cover?36:200}px;font-size:13px;letter-spacing:4px;color:${col};font-weight:700">DOSSIER DES OUVRAGES EXÉCUTÉS</div>
-    <div style="font-size:${String(c.nom||"").length>34?30:36}px;font-weight:800;line-height:1.12;margin-top:10px;color:#111">${esc(c.nom)}</div>
-    ${c.designation_travaux?`<div style="font-size:15px;margin-top:8px;color:#374151">${esc(c.designation_travaux)}</div>`:""}
-    ${m.cover?`<div style="margin-top:24px;height:390px;border-radius:3px;background-color:#e5e7eb;background-image:url('${m.cover}');background-size:cover;background-position:center"></div>`:""}
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px 28px;margin-top:${m.cover?26:60}px">
-      ${info("Lieu des travaux",c.adresse)}${info("Réception des travaux",c.date_reception?frDate(c.date_reception):"")}
-      ${info("Maître d'ouvrage",c.maitre_ouvrage)}${info("Maître d'œuvre",c.maitre_oeuvre)}</div>
-    <div style="flex:1"></div>
-    <div style="border-left:4px solid ${col};padding:2px 0 2px 16px;font-size:11.5px;line-height:1.6;color:#374151">
-      <div style="font-size:15px;font-weight:800;color:#111;letter-spacing:.5px">${esc(e.nom)}${L.forme?`<span style="font-weight:400;font-size:12px;color:#4b5563"> · ${esc(L.forme)}</span>`:""}</div>
-      ${L.adresse?`<div>${esc(L.adresse)}</div>`:""}${L.contact?`<div>${esc(L.contact)}</div>`:""}
-      ${L.legal?`<div>${esc(L.legal)}</div>`:""}${L.assur?`<div>${esc(L.assur)}</div>`:""}</div>
-    <div style="margin-top:14px;font-size:10.5px;color:#6b7280;display:flex;justify-content:space-between"><span>Édité le ${new Date().toLocaleDateString("fr-FR")}</span><span>${c.signataire||signataireSociete(e)?"Signataire : "+esc(signataireChantier(c,e)):""}</span></div>
+  const col=/^#[0-9a-f]{6}$/i.test(e.couleur||"")?e.couleur:"#1f4fa3", fonce=teinte(col,-.5), L=lignesSociete(e);
+  const titre=String(c.nom||"");
+  const info=(k,v)=>`<div style="padding:12px 0;border-top:1px solid #e5e7eb"><div style="font-size:10px;letter-spacing:1.6px;text-transform:uppercase;color:#6b7280;font-weight:700">${k}</div><div style="font-size:14px;margin-top:4px;font-weight:600;color:#111">${esc(v||"—")}</div></div>`;
+  const lots=[...new Set((m.lots||[]).map(l=>String(l.designation||"").replace(/\s*-\s*.*$/,"").trim()).filter(Boolean))].slice(0,6);
+  return `<div style="width:${A4W}px;height:${A4H}px;box-sizing:border-box;background:#fff;color:#111;font-family:${PF};position:relative;overflow:hidden">
+    <div style="padding:44px 56px 0">
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:20px">
+        ${m.logo?`<img src="${m.logo}" alt="" style="max-height:92px;max-width:280px;display:block">`:monogramme(e,col,54)}</div>
+      <div style="margin-top:30px;border-radius:10px;overflow:hidden;position:relative;background:linear-gradient(135deg,${col} 0%,${fonce} 100%);color:#fff;padding:30px 34px 30px">
+        <div style="position:absolute;right:-24px;top:-30px;font-size:190px;font-weight:800;line-height:1;color:rgba(255,255,255,.08);letter-spacing:-6px">DOE</div>
+        <div style="position:relative">
+          <div style="font-size:11.5px;letter-spacing:3px;font-weight:700;color:rgba(255,255,255,.85)">DOSSIER DES OUVRAGES EXÉCUTÉS</div>
+          <div style="font-family:${PFT};font-size:${titre.length>30?32:titre.length>18?38:46}px;font-weight:800;line-height:1.08;margin-top:12px;letter-spacing:-.3px">${esc(titre)}</div>
+          ${c.designation_travaux?`<div style="font-size:15px;margin-top:8px;color:rgba(255,255,255,.85)">${esc(c.designation_travaux)}</div>`:""}
+        </div>
+      </div>
+      ${m.cover?`<div style="margin-top:22px;height:250px;border-radius:10px;background-color:#e5e7eb;background-image:url('${m.cover}');background-size:cover;background-position:center"></div>`:""}
+      <div style="margin-top:${m.cover?22:36}px;display:grid;grid-template-columns:1fr 1fr;column-gap:36px">
+        ${info("Maître d'ouvrage",c.maitre_ouvrage)}${info("Maître d'œuvre",c.maitre_oeuvre)}
+        ${info("Lieu des travaux",c.adresse)}${info("Réception des travaux",c.date_reception?frDate(c.date_reception):"")}
+      </div>
+      ${lots.length?`<div style="border-top:1px solid #e5e7eb;padding-top:12px">
+        <div style="font-size:10px;letter-spacing:1.6px;text-transform:uppercase;color:#6b7280;font-weight:700">Lots réalisés</div>
+        <div style="margin-top:8px">${lots.map(t=>`<span style="display:inline-block;margin:0 6px 6px 0;padding:5px 11px;border-radius:999px;background:${teinte(col,.9)};color:${teinte(col,-.3)};font-size:12px;font-weight:700">${esc(t)}</span>`).join("")}</div></div>`:""}
+    </div>
+    <div style="position:absolute;left:0;right:0;bottom:0;background:#f4f6f9;border-top:4px solid ${col};padding:20px 56px 18px">
+      <div style="display:flex;justify-content:space-between;align-items:flex-end;gap:24px">
+        <div style="font-size:10.5px;line-height:1.65;color:#4b5563">
+          <div style="font-family:${PFT};font-size:14px;font-weight:800;color:#111;letter-spacing:.5px">${esc(e.nom)}${L.forme?`<span style="font-weight:400;font-size:11.5px;color:#6b7280"> · ${esc(L.forme)}</span>`:""}</div>
+          ${L.adresse?`<div>${esc(L.adresse)}</div>`:""}${L.contact?`<div>${esc(L.contact)}</div>`:""}
+          ${L.legal?`<div>${esc(L.legal)}</div>`:""}${L.assur?`<div>${esc(L.assur)}</div>`:""}
+        </div>
+        <div style="text-align:right;font-size:10.5px;color:#6b7280;line-height:1.65;white-space:nowrap">
+          ${signataireChantier(c,e)?`<div>Signataire</div><div style="font-weight:700;color:#111;font-size:12px">${esc(signataireChantier(c,e))}</div>`:""}
+          <div style="margin-top:6px">Édité le ${new Date().toLocaleDateString("fr-FR")}</div></div>
+      </div>
+    </div>
   </div>`;
 }
-const H2=t=>`<div style="font-size:17px;font-weight:700;margin:6px 0 12px;color:#1a2b4a">${t}</div>`;
+const H2=t=>`<div style="font-family:${PFT};font-size:19px;font-weight:700;margin:6px 0 14px;color:#1a2b4a;letter-spacing:-.1px">${t}</div>`;
 const TB=`style="width:100%;border-collapse:collapse;font-size:12px"`;
 const TD=(t,w)=>`<td style="border:1px solid #888;padding:5px 7px;vertical-align:top${w?";width:"+w:""}">${t}</td>`;
 const TH=(t,w)=>`<td style="border:1px solid #888;padding:5px 7px;background:#e9edf3;font-weight:700${w?";width:"+w:""}">${t}</td>`;
@@ -890,7 +948,7 @@ async function genererDOE(){
   // 5. Pages du dossier
   const pages=[];
   await loadMedia([e.logo_path,e.couverture_path,c.couverture_path]);
-  pages.push(pageGarde(c,e,{logo:mediaUrl(e.logo_path),cover:mediaUrl(c.couverture_path)||mediaUrl(e.couverture_path)}));
+  pages.push(pageGarde(c,e,{logo:mediaUrl(e.logo_path),cover:mediaUrl(c.couverture_path)||mediaUrl(e.couverture_path),lots:S.lots}));
   const ligneSom=(t,pg,ind)=>`<div style="display:flex;gap:8px;padding:5px 0;${ind?"padding-left:22px;font-size:12px":"font-weight:700"}"><span>${t}</span><span style="flex:1;border-bottom:1px dotted #999;transform:translateY(-4px)"></span><span>${pg}</span></div>`;
   let som=H2("Sommaire")+ligneSom("A. Identification du chantier",3)+ligneSom("B. Matériaux mis en œuvre",pMat)+ligneSom("C. Attestations de pose",pAtt)
     +S.lots.map((l,i)=>ligneSom(`${esc(l.numero)} ${esc(l.designation)}`,pAtt+i,1)).join("")
@@ -921,6 +979,7 @@ async function genererDOE(){
     +`<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">${pp.ph.map(x=>`<img crossorigin="anonymous" src="${esc(x.url)}" style="width:100%;height:290px;object-fit:cover;border:1px solid #ccc">`).join("")}</div>`,pPhoto+i,total)));
 
   // 6. Rendu des pages en PDF
+  await chargerPolices();
   log(`Mise en page de ${pages.length} page(s) du dossier…`);
   const host=document.createElement("div"); host.style.cssText="position:fixed;left:-10000px;top:0;width:"+A4W+"px"; document.body.appendChild(host);
   const {jsPDF}=window.jspdf; const doc=new jsPDF({unit:"pt",format:"a4",compress:true});
