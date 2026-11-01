@@ -550,8 +550,12 @@ function tabPieces(){
         ${li.produit_id&&r0?`<div class="prod">→ ${esc(r0.produit_nom)}${r0.dtu?` · <span class="mono">${esc(r0.dtu)}</span>`:""}${r0.fournisseur_nom?` · ${esc(r0.fournisseur_nom)}`:""}</div>
           <div class="chips">${rs.map(r=> r.statut==="en_bibliotheque"
             ? `<button class="chip ok" data-act="opendoc" data-path="${esc(r.storage_path)}" title="Ouvrir le document">${esc(r.piece_libelle)}</button>`
-            : `<span class="chip ${CLS[r.statut]}">${esc(r.piece_libelle)} · ${LBL[r.statut]}</span><label class="up" for="up-${li.id}-${r.piece_requise_id}">+ PDF<input type="file" id="up-${li.id}-${r.piece_requise_id}" accept=".pdf,image/*" data-piece="${r.piece_requise_id}" data-produit="${r.produit_id}"></label>`).join("") || `<span class="hint">Aucune pièce définie pour ce produit.</span>`}</div>`
-          :`<div class="hint">Aucun produit associé. <button class="link" data-act="tab" data-tab="devis">Associer dans l'onglet Devis</button></div>`}
+            : `<span class="chip ${CLS[r.statut]}">${esc(r.piece_libelle)} · ${LBL[r.statut]}</span><label class="up" for="up-${li.id}-${r.piece_requise_id}">+ PDF<input type="file" id="up-${li.id}-${r.piece_requise_id}" accept=".pdf,image/*" data-piece="${r.piece_requise_id}" data-produit="${r.produit_id}"></label>`).join("") || `<span class="hint">Aucune pièce définie pour ce produit.</span>`}
+            <label class="up" for="add-${li.id}" title="Ajouter un autre document à ce produit (PV, notice…)">+ Autre document<input type="file" id="add-${li.id}" accept=".pdf,image/*" data-addpiece="${li.produit_id}"></label></div>`
+          :`<div class="row">
+              <label class="up" for="nft-${li.id}">+ Ajouter la fiche technique (PDF)<input type="file" id="nft-${li.id}" accept=".pdf,image/*" data-newft="${li.id}"></label>
+              <select data-ligne="${li.id}" id="psel-${li.id}" aria-label="Choisir un produit de la bibliothèque" style="max-width:320px"><option value="">… ou choisir un produit de la bibliothèque</option>${S.produits.map(p=>`<option value="${p.id}">${esc(p.nom)}</option>`).join("")}</select>
+            </div>`}
       </div>`;}).join("")}
     </article>`).join("")}`;
 }
@@ -1066,6 +1070,34 @@ async function uploadDoc(input){
   if(S.view==="chantier") await refreshChantier(); else { await loadBiblio(); render(); }
 }
 
+/* Ligne sans produit : crée le produit à partir de la ligne, y range la fiche technique et relie la ligne */
+async function nouvelleFiche(input){
+  const f=input.files[0]; if(!f) return;
+  const li=S.lots.flatMap(l=>l.lignes_devis).find(x=>x.id===input.dataset.newft); if(!li) return;
+  const nom=(li.designation||"Produit").replace(/^(fourniture et pose|fourniture|pose|r[ée]alisation)\s+(d['’]une?|de la|de l['’]|des|du|de)?\s*/i,"").replace(/\s+/g," ").trim().slice(0,90);
+  const type=analyseNom(f.name).type;
+  toast("Ajout de la fiche technique…");
+  const [p]=await q(sb.from("produits").insert({entreprise_id:S.ent.id,nom:nom.charAt(0).toUpperCase()+nom.slice(1),mots_cles:[]}).select());
+  const [r]=await q(sb.from("pieces_requises").insert({entreprise_id:S.ent.id,produit_id:p.id,libelle:type,ordre:0}).select());
+  const path=`${S.ent.id}/produits/${p.id}/${Date.now()}-${safeName(f.name)}`;
+  const {error}=await sb.storage.from("documents").upload(path,f,{contentType:f.type||"application/pdf"});
+  if(error){ toast(messageErreur(error)); return; }
+  await q(sb.from("documents").insert({entreprise_id:S.ent.id,piece_requise_id:r.id,storage_path:path,nom_fichier:f.name,source:"upload"}));
+  await q(sb.from("lignes_devis").update({produit_id:p.id}).eq("id",li.id));
+  await refreshChantier(); toast("Fiche ajoutée à la bibliothèque et reliée à la ligne");
+}
+/* Produit déjà relié : ajoute un document supplémentaire (PV, notice…) */
+async function autreDocument(input){
+  const f=input.files[0]; if(!f) return;
+  const p=S.produits.find(x=>x.id===input.dataset.addpiece); if(!p) return;
+  let lib=analyseNom(f.name).type, k=2; while(p.pieces_requises.some(r=>norm(r.libelle)===norm(lib))) lib=`${analyseNom(f.name).type} ${k++}`;
+  const [r]=await q(sb.from("pieces_requises").insert({entreprise_id:S.ent.id,produit_id:p.id,libelle:lib,ordre:p.pieces_requises.length}).select());
+  const path=`${S.ent.id}/produits/${p.id}/${Date.now()}-${safeName(f.name)}`;
+  const {error}=await sb.storage.from("documents").upload(path,f,{contentType:f.type||"application/pdf"});
+  if(error){ toast(messageErreur(error)); return; }
+  await q(sb.from("documents").insert({entreprise_id:S.ent.id,piece_requise_id:r.id,storage_path:path,nom_fichier:f.name,source:"upload"}));
+  await refreshChantier(); toast(`${lib} ajouté`);
+}
 async function uploadPhotos(input){
   const lot=input.dataset.lotphoto, files=[...input.files]; if(!files.length) return;
   toast(`Envoi de ${files.length} photo(s)…`);
@@ -1501,6 +1533,8 @@ document.addEventListener("change",async e=>{
       const x=S.prix.find(y=>y.id===t.dataset.prixprod); if(x) x.produit_id=t.value||null;
       toast(t.value?"Prix lié au produit":"Lien retiré");
     }
+    else if(t.matches("input[type=file][data-newft]")) await nouvelleFiche(t);
+    else if(t.matches("input[type=file][data-addpiece]")) await autreDocument(t);
     else if(t.matches("input[type=file][data-piece]")) await uploadDoc(t);
     else if(t.matches("input[type=file][data-lotphoto]")) await uploadPhotos(t);
     else if(t.matches("select[data-ligne]")){
