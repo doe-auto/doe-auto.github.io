@@ -694,13 +694,14 @@ function tabDOE(){
         ${!c.photo_couverture&&coverSrc()?`<div class="hint">Par défaut, la première photo du chantier est utilisée.</div>`:""}`
         :`<div class="hint">Lance <b>maj-prix-entreprise.sql</b> dans Supabase pour pouvoir choisir la photo.</div>`}
       </div>
-      <div class="row"><button class="btn" data-act="doe-complet">Générer le DOE complet (PDF)</button><button class="btn ghost" data-act="print-att">Imprimer les attestations seules</button></div>
+      ${panneauContenu()}
+      <div class="row"><button class="btn" data-act="doe-complet">${(S.exports||[]).length?"Regénérer le DOE complet (PDF)":"Générer le DOE complet (PDF)"}</button><button class="btn ghost" data-act="print-att">Imprimer les attestations seules</button></div>
       <div class="hint">Le DOE complet réunit dans un seul PDF : page de garde, sommaire, identification, matériaux mis en œuvre, attestations de pose, photos, puis toutes les fiches techniques et tous les PV en annexe.</div>
       ${S.doeUrl&&S.doeChantier===c.id?`<div class="row"><a class="btn" href="${S.doeUrl}" download="${esc(S.doeNom)}" target="_blank" rel="noopener">Télécharger le DOE (${esc(S.doeNom)})</a></div>`:""}
       ${S.doeLog?`<div class="bulk-log" id="doe-log">${esc(S.doeLog)}</div>`:""}
-      ${(S.exports||[]).length?`<div class="box" style="padding:12px;gap:6px"><h2 style="font-size:15px">DOE déjà générés</h2>
+      ${(S.exports||[]).length?`<div class="box" style="padding:12px;gap:6px"><div class="row between"><h2 style="font-size:15px">DOE déjà générés</h2><button class="btn small ghost" data-act="doe-complet">Regénérer le DOE</button></div>
         ${S.exports.map(x=>`<div class="row between"><span style="font-size:13px"><b>${/\.zip$/i.test(x.storage_path)?"Dossier complet (ZIP) : DOE + fiches séparées":"DOE en un seul PDF"}</b> <span class="mono">· ${new Date(x.created_at).toLocaleString("fr-FR",{dateStyle:"short",timeStyle:"short"})}${x.completude!=null?" · "+x.completude+" %":""}</span></span>
-          <span class="row"><button class="btn small" data-act="dl-doe" data-path="${esc(x.storage_path)}">Télécharger</button><button class="btn small ghost" data-act="send-doe" data-id="${x.id}">Envoyer par Gmail</button></span></div>
+          <span class="row"><button class="btn small" data-act="dl-doe" data-path="${esc(x.storage_path)}">Télécharger</button><button class="btn small ghost" data-act="send-doe" data-id="${x.id}">Envoyer par Gmail</button>${S.expDel===x.id?`<button class="btn danger small" data-act="exp-del-yes" data-id="${x.id}" data-path="${esc(x.storage_path)}">Confirmer la suppression</button><button class="btn ghost small" data-act="exp-del-no">Annuler</button>`:`<button class="link" data-act="exp-del" data-id="${x.id}" aria-label="Supprimer ce DOE">Supprimer</button>`}</span></div>
           ${S.sendId===x.id?formEnvoi(x):""}`).join("")}</div>`:""}
     </div>
     <div id="atts" class="list">${atts}</div>
@@ -791,6 +792,32 @@ function tabRenta(){
         <td class="n">${eur2(d.montant_ht)}</td>
         <td style="white-space:nowrap">${d.storage_path?`<button class="link" data-act="opendoc" data-path="${esc(d.storage_path)}">Facture</button> `:""}${S.depDel===d.id?`<button class="btn danger small" data-act="dep-del-yes" data-id="${d.id}">Supprimer</button> <button class="btn ghost small" data-act="dep-del-no">Annuler</button>`:`<button class="link" data-act="dep-del" data-id="${d.id}" aria-label="Supprimer">✕</button>`}</td></tr>`).join("")}
     </tbody></table></div>`:`<div class="box empty">Aucune dépense enregistrée pour ce chantier.</div>`}`;
+}
+
+/* ---- Contenu du DOE modifiable : sections, annexes, documents ajoutés ---- */
+const SECTIONS=[["garde","Page de garde"],["sommaire","Sommaire"],["ident","Identification du chantier"],["ouvrages","Ouvrages et matériaux"],["attestations","Attestations de pose"],["photos","Photos"]];
+function panneauContenu(){
+  const c=S.ch;
+  if(!("doe_config" in c)) return `<div class="hint">Pour modifier le contenu du DOE, lance <b>maj-doe-options.sql</b> dans Supabase.</div>`;
+  const cfg=c.doe_config||{}, sec={garde:true,sommaire:true,ident:true,ouvrages:true,attestations:true,photos:true,...(cfg.sections||{})}, ex=new Set(cfg.exclus||[]);
+  const byL=rowsByLigne(), ann=[], vus=new Set();
+  S.lots.forEach(l=>l.lignes_devis.forEach(li=>(byL[li.id]||[]).forEach(r=>{ if(r.statut==="en_bibliotheque"&&r.storage_path&&!vus.has(r.storage_path)){ vus.add(r.storage_path); ann.push({path:r.storage_path,titre:`${l.numero} · ${r.produit_nom} — ${r.piece_libelle}`}); } })));
+  const nbEx=ann.filter(a=>ex.has(a.path)).length;
+  return `<details class="box" style="padding:12px;gap:10px" ${S.cfgOpen?"open":""} id="doe-cfg"><summary>Modifier le contenu du DOE${nbEx||(cfg.extras||[]).length?` <span class="badge">${nbEx?nbEx+" exclu(s)":""}${nbEx&&(cfg.extras||[]).length?" · ":""}${(cfg.extras||[]).length?(cfg.extras||[]).length+" ajouté(s)":""}</span>`:""}</summary>
+    <div class="hint">Coche ce qui doit apparaître dans le DOE, puis enregistre. Le contenu sera pris en compte à la prochaine génération.</div>
+    <div style="font-weight:600;font-size:13px">Parties du dossier</div>
+    <div class="chips">${SECTIONS.map(([k,l])=>`<label style="display:flex;gap:6px;align-items:center;font-size:13px;margin-right:10px"><input type="checkbox" data-sec="${k}" ${sec[k]?"checked":""}>${l}</label>`).join("")}</div>
+    <div style="font-weight:600;font-size:13px">Fiches techniques et PV en annexe (${ann.length-nbEx}/${ann.length})</div>
+    <div style="display:flex;flex-direction:column;gap:4px;max-height:260px;overflow:auto">${ann.map(a=>`<label style="display:flex;gap:8px;align-items:flex-start;font-size:13px"><input type="checkbox" data-ann="${esc(a.path)}" ${ex.has(a.path)?"":"checked"}><span>${esc(a.titre)}</span></label>`).join("")||`<span class="hint">Aucune fiche technique jointe pour l'instant.</span>`}</div>
+    <div style="font-weight:600;font-size:13px">Documents ajoutés (plans, PV de réception, notices…)</div>
+    ${(cfg.extras||[]).map(x=>`<div class="row between" style="font-size:13px"><span>${esc(x.titre)}</span><span class="row"><button class="link" data-act="opendoc" data-path="${esc(x.path)}">Ouvrir</button><button class="link" data-act="extra-del" data-path="${esc(x.path)}">Retirer</button></span></div>`).join("")}
+    <div class="row"><input type="text" id="extra-titre" placeholder="Titre du document (facultatif)" style="flex:1 1 220px"><label class="up" for="extra-file">+ Ajouter un PDF<input type="file" id="extra-file" accept=".pdf,image/*"></label></div>
+    <div class="row"><button class="btn small" data-act="doe-cfg-save">Enregistrer le contenu</button></div>
+  </details>`;
+}
+async function sauverConfig(cfg){
+  const [c]=await q(sb.from("chantiers").update({doe_config:cfg}).eq("id",S.ch.id).select());
+  S.ch=c; const i=S.chantiers.findIndex(x=>x.id===c.id); if(i>=0) S.chantiers[i]=c;
 }
 
 /* ---- Envoi du DOE par Gmail (lien de téléchargement du PDF archivé) ---- */
@@ -1081,6 +1108,8 @@ async function genererDOE(){
   if(!window.PDFLib||!window.html2canvas||!window.jspdf){ log("✗ Bibliothèques PDF non chargées : recharge la page."); return; }
   await loadChantierData();
   const c=S.ch, e=S.ent, byL=rowsByLigne();
+  const cfg=c.doe_config||{}, sec={garde:true,sommaire:true,ident:true,ouvrages:true,attestations:true,photos:true,...(cfg.sections||{})};
+  const exclus=new Set(cfg.exclus||[]);
 
   // 1. Annexes : documents joints, sans doublons, dans l'ordre du devis
   const annexes=[], vus=new Set();
@@ -1088,6 +1117,8 @@ async function genererDOE(){
     if(r.statut==="en_bibliotheque" && r.storage_path && !vus.has(r.storage_path)){ vus.add(r.storage_path);
       annexes.push({path:r.storage_path,titre:`${r.produit_nom} — ${r.piece_libelle}`,lot:l.numero}); }
   })));
+  for(let k=annexes.length-1;k>=0;k--) if(exclus.has(annexes[k].path)) annexes.splice(k,1);
+  (cfg.extras||[]).forEach(x=>annexes.push({path:x.path,titre:x.titre,lot:"—"}));
   log(`${annexes.length} document(s) à joindre en annexe.`);
   const annexPdfs=[];
   for(const [i,a] of annexes.entries()){
@@ -1114,10 +1145,18 @@ async function genererDOE(){
   const photoPages=[]; photoLots.forEach(l=>{ const ph=S.photos[l.id]; for(let i=0;i<ph.length;i+=6) photoPages.push({l,ph:ph.slice(i,i+6)}); });
 
   // 4. Pagination
-  const nDossier=3+matChunks.length+S.lots.length+photoPages.length;
-  let p=nDossier+1; annexPdfs.forEach(a=>{ a.debut=p; p+=a.pages; });
+  let p=1; const pg={};
+  if(sec.garde) pg.garde=p++;
+  if(sec.sommaire) pg.som=p++;
+  if(sec.ident) pg.ident=p++;
+  if(sec.ouvrages){ pg.mat=p; p+=matChunks.length; }
+  if(sec.attestations){ pg.att=p; p+=S.lots.length; }
+  if(sec.photos&&photoPages.length){ pg.photo=p; p+=photoPages.length; }
+  pg.ann=p; annexPdfs.forEach(a=>{ a.debut=p; p+=a.pages; });
   const total=p-1;
-  const pMat=4, pAtt=4+matChunks.length, pPhoto=pAtt+S.lots.length, pAnn=nDossier+1;
+  const lettres="ABCDEFG"; let li=0; const let_={};
+  ["ident","ouvrages","attestations","photos"].forEach(k=>{ if(sec[k]&&(k!=="photos"||photoPages.length)) let_[k]=lettres[li++]; }); let_.annexes=lettres[li];
+  const pMat=pg.mat, pAtt=pg.att, pPhoto=pg.photo, pAnn=pg.ann;
 
   // 5. Pages du dossier
   const pages=[];
@@ -1126,7 +1165,7 @@ async function genererDOE(){
   if(cs){ try{ coverData=await toDataURL(cs); }catch(err){ log("✗ Photo de couverture illisible : page de garde sans photo."); } }
   const soc=infosSociete(e), BLEU="#1a3f8f";
   const ligneInfo=(k,v)=>`<tr><td style="padding:5px 16px 5px 0;color:#5a6472;white-space:nowrap;vertical-align:top">${k}</td><td style="padding:5px 0;font-weight:600">${v}</td></tr>`;
-  pages.push(`<div style="width:${A4W}px;height:${A4H}px;box-sizing:border-box;background:#fff;color:#111;font-family:Arial,Helvetica,sans-serif;display:flex;flex-direction:column">
+  if(sec.garde) pages.push(`<div style="width:${A4W}px;height:${A4H}px;box-sizing:border-box;background:#fff;color:#111;font-family:Arial,Helvetica,sans-serif;display:flex;flex-direction:column">
     <div style="padding:40px 56px 0;display:flex;justify-content:space-between;align-items:center;min-height:96px">
       ${S.logo?`<img src="${S.logo}" style="max-height:78px;max-width:260px;object-fit:contain">`:`<div style="font-size:24px;font-weight:800;color:${BLEU}">${esc(e.nom)}</div>`}
       <div style="text-align:right;font-size:11px;color:#5a6472;line-height:1.5">${esc([e.telephone&&"Tél. "+e.telephone].filter(Boolean).join(""))}${e.email?"<br>"+esc(e.email):""}${e.site_web?"<br>"+esc(e.site_web):""}</div>
@@ -1150,14 +1189,15 @@ async function genererDOE(){
       <div style="color:#7a838e;margin-top:4px">Édité le ${new Date().toLocaleDateString("fr-FR")}</div>
     </div></div>`);
   const ligneSom=(t,pg,ind)=>`<div style="display:flex;gap:8px;padding:5px 0;${ind?"padding-left:22px;font-size:12px":"font-weight:700"}"><span>${t}</span><span style="flex:1;border-bottom:1px dotted #999;transform:translateY(-4px)"></span><span>${pg}</span></div>`;
-  let som=H2("Sommaire")+ligneSom("A. Identification du chantier",3)+ligneSom("B. Ouvrages réalisés et matériaux mis en œuvre",pMat)+ligneSom("C. Attestations de pose",pAtt)
-    +S.lots.map((l,i)=>ligneSom(`${esc(l.numero)} ${esc(l.designation)}`,pAtt+i,1)).join("")
-    +(photoPages.length?ligneSom("D. Photos de fin de travaux",pPhoto):"")
-    +ligneSom(`${photoPages.length?"E":"D"}. Annexes — fiches techniques et PV`,annexPdfs.length?pAnn:"—")
+  let som=H2("Sommaire")+(sec.ident?ligneSom(`${let_.ident}. Identification du chantier`,pg.ident):"")
+    +(sec.ouvrages?ligneSom(`${let_.ouvrages}. Ouvrages réalisés et matériaux mis en œuvre`,pMat):"")
+    +(sec.attestations?ligneSom(`${let_.attestations}. Attestations de pose`,pAtt)+S.lots.map((l,i)=>ligneSom(`${esc(l.numero)} ${esc(l.designation)}`,pAtt+i,1)).join(""):"")
+    +(let_.photos?ligneSom(`${let_.photos}. Photos de fin de travaux`,pPhoto):"")
+    +ligneSom(`${let_.annexes}. Annexes — fiches techniques, PV et documents`,annexPdfs.length?pAnn:"—")
     +annexPdfs.slice(0,22).map((a,i)=>ligneSom(`Annexe ${i+1} — ${esc(a.titre)}`,a.debut,1)).join("")
     +(annexPdfs.length>22?`<div style="font-size:12px;padding-left:22px">… et ${annexPdfs.length-22} autres annexes (liste en page ${pMat}).</div>`:"");
-  pages.push(pageHTML(som,2,total));
-  pages.push(pageHTML(H2("A. Identification du chantier")+`<table ${TB}>
+  if(sec.sommaire) pages.push(pageHTML(som,pg.som,total));
+  if(sec.ident) pages.push(pageHTML(H2(`${let_.ident}. Identification du chantier`)+`<table ${TB}>
     <tr>${TH("Maître d'ouvrage","35%")}${TD(esc(c.maitre_ouvrage||""))}</tr><tr>${TH("Maître d'œuvre")}${TD(esc(c.maitre_oeuvre||""))}</tr>
     <tr>${TH("Désignation des travaux")}${TD(esc(c.designation_travaux||c.nom))}</tr><tr>${TH("Lieu des travaux")}${TD(esc(c.adresse||""))}</tr>
     <tr>${TH("Période des travaux")}${TD(esc([c.date_debut,c.date_fin].filter(Boolean).join(" → ")||""))}</tr><tr>${TH("Date de réception")}${TD(frDate(c.date_reception))}</tr>
@@ -1167,14 +1207,14 @@ async function genererDOE(){
     ${e.telephone||e.email?`<tr>${TH("Contact")}${TD(esc([e.telephone,e.email].filter(Boolean).join(" – ")))}</tr>`:""}
     ${e.assurance?`<tr>${TH("Garantie décennale")}${TD(esc(e.assurance))}</tr>`:""}${e.qualifications?`<tr>${TH("Qualifications")}${TD(esc(e.qualifications))}</tr>`:""}<tr>${TH("Signataire")}${TD(esc(c.signataire||S.nomAffiche||""))}</tr></table>
     <div style="height:22px"></div>${H2("Lots réalisés")}<table ${TB}><tr>${TH("Lot","12%")}${TH("Désignation")}${TH("Lignes","14%")}</tr>
-    ${S.lots.map(l=>`<tr>${TD(esc(l.numero))}${TD(esc(l.designation))}${TD(l.lignes_devis.length)}</tr>`).join("")}</table>`,3,total));
-  matChunks.forEach((ch,i)=>pages.push(pageHTML((i?"":H2("B. Ouvrages réalisés et matériaux mis en œuvre"))+`<table style="width:100%;border-collapse:collapse;font-size:11px"><tr>${TH("N°","7%")}${TH("Ouvrage")}${TH("Qté","8%")}${TH("U","6%")}${TH("Produit mis en œuvre","24%")}${TH("Documents","18%")}</tr>
+    ${S.lots.map(l=>`<tr>${TD(esc(l.numero))}${TD(esc(l.designation))}${TD(l.lignes_devis.length)}</tr>`).join("")}</table>`,pg.ident,total));
+  if(sec.ouvrages) matChunks.forEach((ch,i)=>pages.push(pageHTML((i?"":H2(`${let_.ouvrages}. Ouvrages réalisés et matériaux mis en œuvre`))+`<table style="width:100%;border-collapse:collapse;font-size:11px"><tr>${TH("N°","7%")}${TH("Ouvrage")}${TH("Qté","8%")}${TH("U","6%")}${TH("Produit mis en œuvre","24%")}${TH("Documents","18%")}</tr>
     ${ch.map(m=>m.titre?`<tr><td colspan="6" style="border:1px solid #888;padding:5px 7px;background:#1a3f8f;color:#fff;font-weight:700">${esc(m.titre)}</td></tr>`
       :`<tr>${TD(esc(m.n))}${TD(esc(m.des))}<td style="border:1px solid #888;padding:5px 7px;text-align:right">${esc(m.q)}</td>${TD(esc(m.u))}${TD(esc(m.produit)||'<span style="color:#999">—</span>')}${TD(esc(m.docs))}</tr>`).join("")||`<tr>${TD("Aucun ouvrage",null)}</tr>`}</table>`
     +(i===matChunks.length-1&&annexPdfs.length>22?`<div style="height:16px"></div>${H2("Liste des annexes")}${annexPdfs.map((a,j)=>`<div style="font-size:11px">Annexe ${j+1} — ${esc(a.titre)} … p. ${a.debut}</div>`).join("")}`:""),pMat+i,total)));
-  S.lots.forEach((l,i)=>{ const tmp=document.createElement("div"); tmp.innerHTML=attestationPose(l); const a=tmp.firstElementChild; a.style.border="0"; a.style.padding="0"; a.style.background="#fff";
+  if(sec.attestations) S.lots.forEach((l,i)=>{ const tmp=document.createElement("div"); tmp.innerHTML=attestationPose(l); const a=tmp.firstElementChild; a.style.border="0"; a.style.padding="0"; a.style.background="#fff";
     pages.push(pageHTML(a.outerHTML,pAtt+i,total,true)); });
-  photoPages.forEach((pp,i)=>pages.push(pageHTML(H2(`${photoPages.length?"D":""}. Photos — lot ${esc(pp.l.numero)} ${esc(pp.l.designation)}`)
+  if(let_.photos) photoPages.forEach((pp,i)=>pages.push(pageHTML(H2(`${let_.photos}. Photos — lot ${esc(pp.l.numero)} ${esc(pp.l.designation)}`)
     +`<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">${pp.ph.map(x=>`<img crossorigin="anonymous" src="${esc(x.url)}" style="width:100%;height:290px;object-fit:cover;border:1px solid #ccc">`).join("")}</div>`,pPhoto+i,total)));
 
   // 6. Rendu des pages en PDF
@@ -1345,6 +1385,19 @@ document.addEventListener("click",async e=>{
     else if(a==="dep-del"){ S.depDel=b.dataset.id; render(); }
     else if(a==="dep-del-no"){ S.depDel=null; render(); }
     else if(a==="dep-del-yes"){ await q(sb.from("depenses").delete().eq("id",b.dataset.id)); S.depDel=null; await loadChantierData(); render(); toast("Dépense supprimée"); }
+    else if(a==="doe-cfg-save") await busy(b,async()=>{
+      const cfg={...(S.ch.doe_config||{})}; cfg.sections={}; document.querySelectorAll("[data-sec]").forEach(x=>cfg.sections[x.dataset.sec]=x.checked);
+      cfg.exclus=[...document.querySelectorAll("[data-ann]")].filter(x=>!x.checked).map(x=>x.dataset.ann);
+      S.cfgOpen=true; await sauverConfig(cfg); render(); toast("Contenu du DOE enregistré : clique sur Regénérer pour l'appliquer");
+    });
+    else if(a==="extra-del"){ const cfg={...(S.ch.doe_config||{})}; cfg.extras=(cfg.extras||[]).filter(x=>x.path!==b.dataset.path); S.cfgOpen=true; await sauverConfig(cfg); render(); toast("Document retiré du DOE"); }
+    else if(a==="exp-del"){ S.expDel=b.dataset.id; render(); }
+    else if(a==="exp-del-no"){ S.expDel=null; render(); }
+    else if(a==="exp-del-yes") await busy(b,async()=>{
+      await sb.storage.from("doe").remove([b.dataset.path]);
+      await q(sb.from("doe_exports").delete().eq("id",b.dataset.id));
+      S.expDel=null; await loadChantierData(); render(); toast("DOE supprimé");
+    });
     else if(a==="send-doe"){ S.sendId=b.dataset.id; render(); const t=$("#env-to"); if(t) t.focus(); }
     else if(a==="send-cancel"){ S.sendId=null; render(); }
     else if(a==="cover-pick") await busy(b,()=>setCover(b.dataset.path));
@@ -1370,6 +1423,16 @@ document.addEventListener("change",async e=>{
       }catch(err){ toast("Fichier illisible : "+(err.message||err)); }
     }
     else if(t.id==="cover-file") await uploadCover(t);
+    else if(t.id==="extra-file"){
+      const f=t.files[0]; if(!f) return;
+      const path=`${S.ent.id}/chantiers/${S.ch.id}/doe/${Date.now()}-${safeName(f.name)}`;
+      toast("Envoi du document…");
+      const {error}=await sb.storage.from("documents").upload(path,f,{contentType:f.type||"application/pdf"});
+      if(error) return toast(messageErreur(error));
+      const titre=($("#extra-titre")?.value||"").trim()||f.name.replace(/\.[^.]+$/,"");
+      const cfg={...(S.ch.doe_config||{})}; cfg.extras=[...(cfg.extras||[]),{path,titre}];
+      S.cfgOpen=true; await sauverConfig(cfg); render(); toast("Document ajouté au DOE");
+    }
     else if(t.id==="prix-fam"){ S.prixFam=t.value; render(); }
     else if(t.matches("input[data-prix]")){
       const v=String(t.value).replace(/\s|€/g,"").replace(",","."); const n=v===""?null:Number(v);
