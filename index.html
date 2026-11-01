@@ -428,7 +428,7 @@ function tabDevis(){
   if(!S.lots.length) return `<div class="box">
       <h2>Import du devis</h2>
       <div class="hint">Importe le PDF du devis (Obat ou autre), ou colle tes lignes depuis Excel : N° · Désignation · Unité · Quantité (tabulation ou point-virgule). Une ligne sans unité = titre de lot.</div>
-      <div class="row"><label class="btn" for="devis-pdf" style="position:relative">Importer le PDF du devis<input type="file" id="devis-pdf" accept=".pdf,application/pdf" style="position:absolute;width:1px;height:1px;opacity:0;left:0;top:0"></label></div>
+      <div class="row"><label class="btn" for="devis-pdf" style="position:relative">Importer le PDF du devis<input type="file" id="devis-pdf" style="position:absolute;width:1px;height:1px;opacity:0;left:0;top:0"></label></div>
       <div class="hint" id="pdf-info" aria-live="polite"></div>
       ${S.produits.length?"":`<div class="confirm" style="background:var(--warn-soft)">Ta bibliothèque est vide : aucun produit ne sera reconnu. <button class="link" data-act="biblio">Ouvrir la bibliothèque</button></div>`}
       <textarea id="devis" spellcheck="false" placeholder="Colle ici les lignes de ton devis…"></textarea>
@@ -924,6 +924,8 @@ async function importerPdfDevis(input){
   const f=input.files[0]; if(!f) return;
   toast("Lecture du PDF…");
   try{
+    const debut=new Uint8Array(await f.slice(0,1024).arrayBuffer()), entete=String.fromCharCode(...debut);
+    if(!entete.includes("%PDF")){ toast("Ce fichier n'est pas un PDF."); input.value=""; return; }
     const txt=analyserDevisPdf(await lignesPdf(f));
     const nb=txt?txt.split("\n").length:0;
     if(!nb){ toast("Aucune ligne de devis trouvée dans ce PDF. Exporte-le en Excel depuis Obat et colle les lignes."); return; }
