@@ -289,8 +289,14 @@ function parseDevis(txt){
   const lots=[]; let cur=null, auto=0, last=null;
   const numerote=rows.filter(r=>RE_NUM.test(r[0]||"")).length>=3;
   const PARASITE=/siret|r\.?c\.?s|capital|iban|bic\b|page\s*\d|t[ée]l\.?\s*:|www\.|@|net [àa] payer|bon pour accord|signature|conditions de|acompte|garantie d[ée]cennale|couverture :/i;
+  // Fin du devis : conditions générales, paiement, acceptation → on arrête la lecture
+  const FIN=/conditions g[ée]n[ée]rales|m[ée]thodes? de paiement|modalit[ée]s de (paiement|r[èe]glement)|conditions de (paiement|r[èe]glement)|bon pour accord|re[çc]u avant l.ex[ée]cution|mention manuscrite|\bcgv\b|date et signature/i;
+  const ARGENT=/€|%|^\d[\d\s]*[.,]\d{2}$/;
+  let fin=false;
   rows.forEach((r,ri)=>{
+    if(fin) return;
     if(hi>=0 && hi<60 && ri<=hi) return;
+    if(auto>0 && FIN.test(r.join(" "))){ fin=true; return; }
     let n="",des="",u="",q=null;
     if(map){
       n=map.n>=0?r[map.n]||"":""; des=r[map.des]||""; u=map.u>=0?r[map.u]||"":""; q=map.q>=0?nombre(r[map.q]):null;
@@ -298,9 +304,9 @@ function parseDevis(txt){
       // 2. Sans en-tête : n° = cellule type 1.2, désignation = plus long texte, unité = cellule unité, quantité = 1er nombre après la désignation
       const cells=r.map((c,k)=>({c,k}));
       const num=cells.find(x=>RE_NUM.test(x.c)&&x.k===0);
-      const texts=cells.filter(x=>x.c&&nombre(x.c)===null&&!RE_UNITE.test(x.c)&&x!==num);
+      const texts=cells.filter(x=>x.c&&nombre(x.c)===null&&!ARGENT.test(x.c)&&!RE_UNITE.test(x.c)&&x!==num);
       const d=texts.sort((a,b)=>b.c.length-a.c.length)[0];
-      if(!d) return;
+      if(!d){ if(num && !cells.some(x=>RE_UNITE.test(x.c))){ cur={numero:num.c.replace(/\.$/,""),designation:"Lot "+num.c.replace(/\.$/,""),lignes:[]}; lots.push(cur); last=null; } return; }
       des=d.c; n=num?num.c:"";
       const uc=cells.find(x=>RE_UNITE.test(x.c)); u=uc?uc.c:"";
       const nums=cells.filter(x=>x!==num&&x.k>d.k&&nombre(x.c)!==null);
@@ -309,7 +315,9 @@ function parseDevis(txt){
     if(!des || /^(total|sous-total|montant|tva|net a payer|designation)/i.test(norm(des)) || PARASITE.test(r.join(" "))) return;
     const estTitre=!u && q===null;
     // Désignation sur plusieurs lignes (PDF) : une ligne sans n°, sans unité ni quantité prolonge la précédente
-    if(estTitre && numerote && !n && last){ last.designation+=" "+des; return; }
+    if(estTitre && numerote && !n && last){ if(last.designation.length+des.length<350) last.designation+=" "+des; return; }
+    // Titre de lot resté générique (« Lot 8 ») : la première ligne de texte sans n° lui donne son nom
+    if(estTitre && !n && cur && /^Lot \d/.test(cur.designation) && !cur.lignes.length){ cur.designation=des; return; }
     if(estTitre){ cur={numero:n||String(lots.length+1),designation:des,lignes:[]}; lots.push(cur); last=null; return; }
     if(!cur){ cur={numero:"1",designation:"Travaux",lignes:[]}; lots.push(cur); }
     auto++;
