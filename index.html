@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>DOE Auto</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@600;700;800&family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@600;800&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
 <style>
 :root{
   --bg:#eef1f4; --surface:#ffffff; --ink:#18212b; --muted:#5b6876; --line:#d5dbe2;
@@ -119,19 +119,6 @@ details summary{cursor:pointer;font-weight:600;color:var(--accent)}
 .attp .sigbox{height:70px;border:1px dashed #888;margin-top:4px}
 .attp .foot{font-size:10px;color:#666;text-align:right}
 .attp .desc{white-space:pre-line}
-/* Page Entreprise et aperçu de la page de garde */
-.pv{position:relative;width:100%;max-width:420px;aspect-ratio:794/1123;overflow:hidden;border:1px solid var(--line);border-radius:4px;background:#fff;box-shadow:0 8px 24px -16px rgba(0,0,0,.3)}
-.pv>div{position:absolute;left:0;top:0;transform-origin:0 0}
-.ent-grid{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,340px);gap:16px;align-items:start}
-.ent-grid.garde{grid-template-columns:minmax(0,1fr) minmax(0,260px)}
-@media (max-width:760px){.ent-grid,.ent-grid.garde{grid-template-columns:minmax(0,1fr)}}
-.media{display:flex;gap:12px;align-items:center;flex-wrap:wrap}
-.media .thumb{width:120px;height:72px;border:1px solid var(--line);border-radius:6px;background:var(--paper) center/contain no-repeat;flex:none}
-.media .thumb.cov{background-size:cover}
-input[type=color]{width:56px;height:36px;padding:2px;border:1px solid var(--line);border-radius:6px;background:var(--paper);cursor:pointer}
-.recherche{position:sticky;top:0;z-index:4;background:var(--bg);padding-block:8px;display:flex;gap:10px;align-items:center}
-.recherche input{font:inherit;font-size:15px;color:var(--ink);background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:10px 12px;width:100%;min-width:0}
-.recherche .hint{white-space:nowrap;font-family:var(--f-mono)}
 .bulk-log{font-family:var(--f-mono);font-size:12px;max-height:220px;overflow:auto;background:var(--paper);border:1px solid var(--line);border-radius:6px;padding:8px;white-space:pre-wrap}
 @media print{
   :root{--bg:#fff;--surface:#fff;--ink:#000;--muted:#444;--line:#bbb;--paper:#fff;--accent:#1d4ed8;color-scheme:light}
@@ -140,8 +127,7 @@ input[type=color]{width:56px;height:36px;padding:2px;border:1px solid var(--line
   body[data-print="doe"] #sheet{position:absolute;left:0;top:0;width:100%;border:0;box-shadow:none;padding:0}
   body[data-print="att"] #atts, body[data-print="att"] #atts *{visibility:visible}
   body[data-print="att"] #atts{position:absolute;left:0;top:0;width:100%}
-  .cover,.cover-pv{break-after:page}
-  .cover-pv{border:0;box-shadow:none;max-width:none}
+  .cover{break-after:page}
   .attp{break-before:page;border:0;padding:0}
   #atts .attp:first-child{break-before:auto}
 }
@@ -192,8 +178,7 @@ const CLS = {en_bibliotheque:"ok", expiree:"bad", demandee:"warn", manquante:"ba
 
 /* ===================== ÉTAT ===================== */
 const S = { user:null, ent:null, role:null, nomAffiche:"", view:"chantiers", tab:"pieces",
-  chantiers:[], ch:null, lots:[], rows:[], photos:{}, produits:[], fourn:[], confirmReplace:false, authMode:"login",
-  media:{} /* images de la page de garde, en data URL, rangées par chemin de stockage */ };
+  chantiers:[], ch:null, lots:[], rows:[], photos:{}, produits:[], fourn:[], confirmReplace:false, authMode:"login" };
 
 /* ===================== OUTILS ===================== */
 const $ = s=>document.querySelector(s);
@@ -209,25 +194,17 @@ function messageErreur(e){
   if(/Email not confirmed/i.test(m)) return "Confirme d'abord ton e-mail (lien reçu par mail).";
   if(/permission denied/i.test(m)) return "Accès refusé par la base : vérifie les droits (voir la notice).";
   if(/row-level security/i.test(m)) return "Action refusée : cet élément n'appartient pas à ton entreprise.";
-  if(/sans_fiche/i.test(m)) return "La base n'est pas à jour : lance maj-lignes.sql dans Supabase.";
-  if(/supprimer_(produit|piece)/i.test(m)) return "La base n'est pas à jour : lance supprimer-produit.sql dans Supabase.";
-  if(/schema cache|column .* does not exist/i.test(m)) return "La base n'est pas à jour : lance maj-entreprise.sql dans Supabase.";
   return m;
 }
 async function busy(btn, fn){ if(btn) btn.disabled=true; try{ await fn(); } catch(e){} finally{ if(btn) btn.disabled=false; } }
 
 /* Reconnaissance produit : le mot-clé qui apparaît le plus tôt dans la désignation gagne */
-const MOTS_VIDES=new Set("avec pour dans sans sous entre compris fourniture pose mise oeuvre ensemble type selon toute hauteur fiche technique produit produits les des une sur par".split(" "));
-const motsUtiles=t=>norm(t).replace(/[^a-z0-9/]+/g," ").split(" ").filter(w=>w.length>=4&&!MOTS_VIDES.has(w)||/\d/.test(w)&&w.length>=3||MOTS_COURTS.has(w));
-const MOTS_COURTS=new Set("wc pvc vmc led mdf osb pse ba hpl".split(" "));
 function matchProduit(des){
-  const d=norm(des); let best=null, pos=Infinity;
-  S.produits.forEach(p=>(p.mots_cles||[]).forEach(k=>{ const i=d.indexOf(norm(k)); if(k && i>=0 && i<pos){ pos=i; best=p; } }));
-  if(best) return best;
-  // Sinon : mots du nom du produit retrouvés dans la ligne (une marque compte double), au moins 2 points
-  const md=new Set(motsUtiles(des)); let score=0;
-  S.produits.forEach(p=>{ let sc=0; new Set(motsUtiles(p.nom)).forEach(w=>{ if(md.has(w)) sc+=MARQUES[w]?2:1; }); if(sc>score){ score=sc; best=p; } });
-  return score>=2?best:null;
+  const d=norm(des); let best=null, pos=Infinity, len=0;
+  if(/^(demolition|depose|curage|nettoyage|installation de chantier)/.test(d)) return null;
+  S.produits.forEach(p=>(p.mots_cles||[]).forEach(k=>{ const nk=norm(k); const i=d.indexOf(nk);
+    if(i>=0 && (i<pos || (i===pos && nk.length>len))){ pos=i; len=nk.length; best=p; } }));
+  return best;
 }
 function parseDevis(txt){
   const lots=[]; let cur=null;
@@ -243,94 +220,34 @@ function parseDevis(txt){
   return lots;
 }
 
-/* ===================== INTITULÉS HARMONISÉS ===================== */
-/* Affichage seulement : la base garde le texte d'origine. Sigles en capitales, marques avec leur graphie, le reste en minuscules, première lettre en capitale. */
-const SIGLES=new Set("pv ft fds fdes dtu pse pvc mdf acermi upec ce nf ei rei cf wc vmc led tlp lvt osb hpl ba sti stil ral ts atec dta avis".split(" "));
-const MARQUES={siniat:"Siniat",placo:"Placo",placoplatre:"Placoplâtre",knauf:"Knauf",isover:"Isover",rockwool:"Rockwool",ursa:"Ursa",gerflor:"Gerflor",tarkett:"Tarkett",forbo:"Forbo",tiaso:"Tiaso",udirev:"Udirev",maestria:"Maestria",aqualine:"Aqualine",unistop:"Unistop",seigneurie:"Seigneurie",unikalo:"Unikalo",tollens:"Tollens",zolpan:"Zolpan",sikkens:"Sikkens",weber:"Weber",mapei:"Mapei",armstrong:"Armstrong",ecophon:"Ecophon",rockfon:"Rockfon",eurocoustic:"Eurocoustic",liberty:"Liberty",original:"Original",evo:"Evo",aqua:"Aqua",reguini:"Reguini",stil:"Stil"};
-const MOTS_COURANTS=new Set(("fiche fiches technique techniques produit produits plaque plaques plâtre platre cloison cloisons doublage isolant isolation porte portes bloc bloc-porte peinture peintures plinthe plinthes sol sols revêtement revetement dalle dalles ossature ossatures enduit enduits joint joints bande bandes laine minérale minerale verre roche feu acoustique de du des la le les l d et en à a pour sur avec sans intérieur interieur intérieure extérieur mate satin velours vitrée vitree alu aluminium châssis chassis cadre stratifié stratifie strat résine resine ferme-porte ferme-portes notice pose certificat classement entretien données donnees sécurité securite résistance resistance réaction reaction procès-verbal proces verbal rail rails montant montants fourrure fourrures cornière corniere vis colle mortier ragréage ragreage primaire impression sous-couche finition demi environnementale sanitaire déclaration declaration performance performances haute hydro hydrofuge phonique thermique").split(" "));
-function harmoniser(txt){
-  const t=String(txt||"").replace(/\s+/g," ").trim(); if(!t) return t;
-  const lettres=t.replace(/[^A-Za-zÀ-ÿ]/g,""), plat=lettres===lettres.toUpperCase()||lettres===lettres.toLowerCase();
-  let out=t.split(/(\s+|\s-\s|\/|\(|\))/).map(m=>{
-    if(!m||/^\s|^[\/()]$/.test(m)) return m;
-    const k=norm(m).replace(/[^a-z0-9-]/g,""), base=m.toLowerCase();
-    if(/\d/.test(m)) return m.toUpperCase().replace(/(\d)(MM|CM|M)\b/g,(x,d,u)=>d+u.toLowerCase());
-    if(/^(mm|cm|m|m2|m²|m3|ml|kg|l|db)$/.test(k)) return k==="db"?"dB":base;
-    if(SIGLES.has(k)) return m.toUpperCase();
-    if(MARQUES[k]) return MARQUES[k];
-    if(plat || MOTS_COURANTS.has(k) || MOTS_COURANTS.has(norm(m))) return base;
-    return m; // nom propre déjà bien écrit, on n'y touche pas
-  }).join("");
-  return out.charAt(0).toUpperCase()+out.slice(1);
-}
-/* Noms de produits : on retire le type de document collé devant (« Fiche technique Gerflor… » → « Gerflor… ») */
-function harmoniserProduit(txt){
-  const h=harmoniser(txt), r=h.replace(/^(fiche technique|fiche produit|fiches techniques|ft|pv)\s*[-–:]?\s+/i,"");
-  return r ? r.charAt(0).toUpperCase()+r.slice(1) : h;
-}
-/* Libellés de pièces : vocabulaire fixe */
-function harmoniserPiece(txt){
-  const h=harmoniser(txt);
-  return h.replace(/^Pv\b/,"PV").replace(/^Fiche technique\b/i,"Fiche technique").replace(/^Fds\b/i,"FDS").replace(/^Fdes\b/i,"FDES");
-}
-
 /* ===================== CHARGEMENTS ===================== */
 async function loadEntreprise(){
   const rows=await q(sb.from("membres").select("role,nom_affiche,entreprise_id,entreprises(*)").eq("user_id",S.user.id).limit(1));
   if(rows.length){ S.ent=rows[0].entreprises; S.role=rows[0].role; S.nomAffiche=rows[0].nom_affiche||""; } else S.ent=null;
-  if(S.ent) await loadMedia([S.ent.logo_path,S.ent.couverture_path]);
+  S.logo=null;
+  if(S.ent && S.ent.logo_path){ try{ const {data}=await sb.storage.from("documents").createSignedUrl(S.ent.logo_path,3600); S.logo=await toDataURL(data.signedUrl); }catch(e){} }
 }
-/* Images (logo, couvertures) : téléchargées une fois et gardées en data URL pour que html2canvas puisse les dessiner */
-async function loadMedia(paths){
-  for(const p of paths){
-    if(!p || S.media[p]) continue;
-    try{
-      const {data,error}=await sb.storage.from("photos").download(p); if(error) throw error;
-      S.media[p]=await new Promise((ok,ko)=>{ const r=new FileReader(); r.onload=()=>ok(r.result); r.onerror=ko; r.readAsDataURL(data); });
-    }catch(e){ console.warn("Image introuvable",p,e); }
-  }
+async function toDataURL(url){ const b=await (await fetch(url)).blob(); return await new Promise(r=>{ const fr=new FileReader(); fr.onload=()=>r(fr.result); fr.readAsDataURL(b); }); }
+/* Lignes d'identité de la société (pied de page, page de garde) */
+function infosSociete(e){
+  const l1=[e.nom, e.forme_juridique&&e.capital?`${e.forme_juridique} au capital de ${e.capital}`:(e.forme_juridique||"")].filter(Boolean).join(" – ");
+  const l2=[e.adresse, [e.code_postal,e.ville].filter(Boolean).join(" ")].filter(Boolean).join(", ");
+  const l3=[e.telephone&&"Tél. "+e.telephone, e.email, e.site_web].filter(Boolean).join(" – ");
+  const l4=[e.siret&&"SIRET "+e.siret, e.rcs&&"RCS "+e.rcs, e.ape&&"APE "+e.ape, e.tva&&"TVA "+e.tva].filter(Boolean).join(" – ");
+  const l5=[e.assurance&&"Garantie décennale : "+e.assurance, e.qualifications].filter(Boolean).join(" – ");
+  return [l1,l2,l3,l4,l5].filter(Boolean);
 }
-const mediaUrl = p=> p ? (S.media[p]||null) : null;
-/* Réduit une photo avant envoi (les photos de téléphone font souvent 5 Mo et plus) */
-async function reduireImage(file,max=1800){
-  if(!/^image\/(jpeg|png|webp|heic)/i.test(file.type)) return file;
-  try{
-    const bmp=await createImageBitmap(file); const s=Math.min(1,max/Math.max(bmp.width,bmp.height));
-    if(s===1 && file.size<1.5e6) return file;
-    const cv=document.createElement("canvas"); cv.width=Math.round(bmp.width*s); cv.height=Math.round(bmp.height*s);
-    cv.getContext("2d").drawImage(bmp,0,0,cv.width,cv.height);
-    return await new Promise(r=>cv.toBlob(b=>r(b||file),"image/jpeg",0.86));
-  }catch(e){ return file; }
-}
-
-/* ---- Infos société : utilisées par la page de garde, l'identification, les pieds de page et les attestations ---- */
-function adresseSociete(e){
-  const a=(e.adresse||"").trim(), cpv=[e.code_postal,e.ville].filter(Boolean).join(" ");
-  if(!cpv || (e.code_postal && a.includes(e.code_postal))) return a;
-  return [a,cpv].filter(Boolean).join(", ");
-}
-function signataireSociete(e){ return [e.signataire_nom,e.signataire_fonction].filter(Boolean).join(", "); }
-function signataireChantier(c,e){ return c.signataire || signataireSociete(e) || S.nomAffiche || ""; }
-function lignesSociete(e){
-  const forme=[e.forme_juridique, e.capital?"au capital de "+e.capital:""].filter(Boolean).join(" ");
-  const contact=[e.telephone?"Tél. "+e.telephone:"", e.email, e.site_web].filter(Boolean).join(" – ");
-  const legal=[e.siret?"SIRET "+e.siret:"", e.rcs, e.ape?"APE "+e.ape:"", e.tva_intra?"TVA "+e.tva_intra:""].filter(Boolean).join(" – ");
-  const assur=[e.assurance_decennale?"Garantie décennale "+e.assurance_decennale:"", e.qualifications].filter(Boolean).join(" – ");
-  return {forme, adresse:adresseSociete(e), contact, legal, assur};
-}
-function piedSociete(e){ return [e.nom, e.forme_juridique, e.siret?"SIRET "+e.siret:""].filter(Boolean).join(" – "); }
 async function loadChantiers(){ S.chantiers=await q(sb.from("chantiers").select("*").order("created_at",{ascending:false})); }
 async function loadBiblio(){
   S.fourn=await q(sb.from("fournisseurs").select("*").order("nom"));
   S.produits=await q(sb.from("produits").select("*, fournisseurs(id,nom,email), pieces_requises(id,libelle,ordre, documents(id,nom_fichier,storage_path,date_validite,created_at))").order("nom"));
-  S.produits.forEach(p=>{ p.pieces_requises.sort((a,b)=>a.ordre-b.ordre); p.nom=harmoniserProduit(p.nom); p.pieces_requises.forEach(r=>r.libelle=harmoniserPiece(r.libelle)); });
+  S.produits.forEach(p=>p.pieces_requises.sort((a,b)=>a.ordre-b.ordre));
 }
 async function loadChantierData(){
   const id=S.ch.id;
   S.lots=await q(sb.from("lots").select("*, lignes_devis(*)").eq("chantier_id",id).order("ordre"));
-  S.lots.forEach(l=>{ l.lignes_devis.sort((a,b)=>a.ordre-b.ordre); l.designation=harmoniser(l.designation); });
+  S.lots.forEach(l=>l.lignes_devis.sort((a,b)=>a.ordre-b.ordre));
   S.rows=await q(sb.from("v_pieces_chantier").select("*").eq("chantier_id",id));
-  S.rows.forEach(r=>{ r.produit_nom=harmoniserProduit(r.produit_nom); r.piece_libelle=harmoniserPiece(r.piece_libelle); });
   S.photos={};
   if(S.lots.length){
     const ph=await q(sb.from("photos").select("*").in("lot_id",S.lots.map(l=>l.id)).order("created_at"));
@@ -340,6 +257,8 @@ async function loadChantierData(){
       ph.forEach(p=>{ (S.photos[p.lot_id]=S.photos[p.lot_id]||[]).push({...p,url:urls[p.storage_path]}); });
     }
   }
+  S.coverUrl=null;
+  if(S.ch.photo_couverture){ const {data}=await sb.storage.from("photos").createSignedUrl(S.ch.photo_couverture,3600); S.coverUrl=data?.signedUrl||null; }
 }
 
 /* ===================== RENDU ===================== */
@@ -348,8 +267,8 @@ function render(){
   if(!S.user) return app.innerHTML=viewAuth();
   if(!S.ent) return app.innerHTML=viewOnboard();
   const head=`<header class="top"><div class="brand" data-act="home" role="link" tabindex="0">DOE Auto<small>${esc(S.ent.nom)}</small></div>
-    <nav class="mainnav"><button class="btn small ${S.view==="chantiers"||S.view==="chantier"?"":"ghost"}" data-act="home">Chantiers</button>
-    <button class="btn small ${S.view==="biblio"?"":"ghost"}" data-act="biblio">Bibliothèque</button>
+    <nav class="mainnav"><button class="btn small ${S.view==="biblio"?"":"ghost"}" data-act="biblio">Bibliothèque</button>
+    <button class="btn small ${S.view==="chantiers"||S.view==="chantier"?"":"ghost"}" data-act="home">Chantiers</button>
     <button class="btn small ${S.view==="entreprise"?"":"ghost"}" data-act="entreprise">Entreprise</button>
     <button class="btn small ghost" data-act="logout">Déconnexion</button></nav></header>`;
   let body="";
@@ -358,18 +277,7 @@ function render(){
   else if(S.view==="biblio") body=viewBiblio();
   else if(S.view==="entreprise") body=viewEntreprise();
   app.innerHTML=head+body;
-  ajusterApercus(); filtrerBiblio();
 }
-/* Met à l'échelle les aperçus A4 (794 px) à la largeur de leur cadre */
-/* Recherche rapide dans la bibliothèque : filtre sans recharger la page */
-function filtrerBiblio(){
-  const el=$("#rech-biblio"); if(!el) return; S.rech=el.value;
-  const mots=norm(el.value).split(/\s+/).filter(Boolean); let n=0, tot=0;
-  document.querySelectorAll("#liste-biblio>article").forEach(a=>{ tot++; const ok=mots.every(m=>a.dataset.rech.includes(m)); a.hidden=!ok; if(ok) n++; });
-  $("#rech-nb").textContent=mots.length?`${n} / ${tot}`:"";
-}
-function ajusterApercus(){ document.querySelectorAll(".pv").forEach(w=>{ const p=w.firstElementChild; if(p) p.style.transform=`scale(${w.clientWidth/A4W})`; }); }
-window.addEventListener("resize",()=>ajusterApercus());
 
 function viewAuth(){
   const signup=S.authMode==="signup";
@@ -410,7 +318,7 @@ function viewChantiers(){
           <label class="f">Maître d'ouvrage<input type="text" id="n-moa"></label>
           <label class="f">Maître d'œuvre<input type="text" id="n-moe"></label>
           <label class="f">Date de réception<input type="date" id="n-date"></label>
-          <label class="f">Signataire<input type="text" id="n-sign" value="${esc(signataireSociete(S.ent)||S.nomAffiche)}"></label>
+          <label class="f">Signataire<input type="text" id="n-sign" value="${esc(S.nomAffiche)}"></label>
         </div>
         <button class="btn" type="submit">Créer le chantier</button>
       </form></details>
@@ -435,9 +343,7 @@ function viewChantier(){
 function tabDevis(){
   if(!S.lots.length) return `<div class="box">
       <h2>Import du devis</h2>
-      <div class="hint">Importe le PDF du devis (Obat ou autre), ou colle tes lignes depuis Excel : N° · Désignation · Unité · Quantité (tabulation ou point-virgule). Une ligne sans unité = titre de lot.</div>
-      <div class="row"><label class="btn" for="devis-pdf" style="position:relative">Importer le PDF du devis<input type="file" id="devis-pdf" style="position:absolute;width:1px;height:1px;opacity:0;left:0;top:0"></label></div>
-      <div class="hint" id="pdf-info" aria-live="polite"></div>
+      <div class="hint">Colle tes lignes depuis Excel ou Obat : N° · Désignation · Unité · Quantité (tabulation ou point-virgule). Une ligne sans unité = titre de lot.</div>
       ${S.produits.length?"":`<div class="confirm" style="background:var(--warn-soft)">Ta bibliothèque est vide : aucun produit ne sera reconnu. <button class="link" data-act="biblio">Ouvrir la bibliothèque</button></div>`}
       <textarea id="devis" spellcheck="false" placeholder="Colle ici les lignes de ton devis…"></textarea>
       <div class="row"><button class="btn" data-act="import">Importer le devis</button><button class="btn ghost" data-act="exemple">Coller l'exemple</button></div>
@@ -461,14 +367,8 @@ function stats(){
   const p=S.rows.filter(r=>r.piece_requise_id); const c={en_bibliotheque:0,expiree:0,demandee:0,manquante:0};
   p.forEach(r=>c[r.statut]++);
   const photoLots=S.lots.filter(l=>(S.photos[l.id]||[]).length).length;
-  const orphelines=lignesSansFiche().length;
-  const total=p.length+S.lots.length+orphelines;
-  return {...c,photoLots,orphelines,total:p.length,pct: total?Math.round((c.en_bibliotheque+photoLots)/total*100):0};
-}
-/* Lignes qui n'ont aucune fiche en face : pas de produit associé, ou produit sans pièce exigée */
-function lignesSansFiche(){
-  const byL=rowsByLigne();
-  return S.lots.flatMap(l=>l.lignes_devis.filter(li=>!li.sans_fiche && (!li.produit_id || !(byL[li.id]||[]).some(r=>r.piece_requise_id))).map(li=>({...li,lot:l})));
+  const total=p.length+S.lots.length;
+  return {...c,photoLots,total:p.length,pct: total?Math.round((c.en_bibliotheque+photoLots)/total*100):0};
 }
 function rowsByLigne(){ const m={}; S.rows.forEach(r=>{ (m[r.ligne_id]=m[r.ligne_id]||[]).push(r); }); return m; }
 
@@ -482,7 +382,6 @@ function tabPieces(){
       <div class="stats"><span><b>${s.en_bibliotheque}</b> jointes</span><span><b>${s.demandee}</b> demandées</span><span><b>${s.manquante+s.expiree}</b> manquantes ou expirées</span><span><b>${s.photoLots}/${S.lots.length}</b> lots photographiés</span></div>
       <div class="hint">Un PDF ajouté ici entre dans la bibliothèque et sera repris sur tous tes prochains chantiers.</div>
     </div>
-    ${blocControle()}
     ${S.lots.map(l=>`<article class="lot">
       <header><h3><span class="num">${esc(l.numero)}</span>${esc(l.designation)}</h3>
         <div class="photos">${(S.photos[l.id]||[]).map(p=>`<img src="${esc(p.url||"")}" alt="Photo du lot ${esc(l.numero)}" loading="lazy">`).join("")}
@@ -494,46 +393,10 @@ function tabPieces(){
           <div class="chips">${rs.map(r=> r.statut==="en_bibliotheque"
             ? `<button class="chip ok" data-act="opendoc" data-path="${esc(r.storage_path)}" title="Ouvrir le document">${esc(r.piece_libelle)}</button>`
             : `<span class="chip ${CLS[r.statut]}">${esc(r.piece_libelle)} · ${LBL[r.statut]}</span><label class="up" for="up-${li.id}-${r.piece_requise_id}">+ PDF<input type="file" id="up-${li.id}-${r.piece_requise_id}" accept=".pdf,image/*" data-piece="${r.piece_requise_id}" data-produit="${r.produit_id}"></label>`).join("") || `<span class="hint">Aucune pièce définie pour ce produit.</span>`}</div>`
-          : li.sans_fiche?`<div class="hint">Prestation sans fiche technique. <button class="link" data-act="ligne-fiche" data-id="${li.id}" data-v="0">Annuler</button></div>`
-          :`<div class="chips"><span class="chip bad">Aucune fiche en face</span><span class="hint">voir « Lignes sans fiche » en haut</span></div>`}
+          :`<div class="hint">Aucun produit associé. <button class="link" data-act="tab" data-tab="devis">Associer dans l'onglet Devis</button></div>`}
       </div>`;}).join("")}
     </article>`).join("")}`;
 }
-
-function blocControle(){
-  const ls=lignesSansFiche(), opts=S.produits.map(p=>`<option value="${p.id}">${esc(p.nom)}</option>`).join("");
-  if(!ls.length) return `<div class="box" style="border-color:var(--ok)"><div class="row between"><h2>Contrôle des fiches</h2><span class="chip ok">Chaque ligne a sa fiche</span></div></div>`;
-  return `<div class="box" style="border-color:var(--bad)" id="controle">
-    <div class="row between"><h2>Lignes sans fiche</h2><span class="chip bad">${ls.length} ligne${ls.length>1?"s":""} à traiter</span></div>
-    <div class="row" style="margin:8px 0"><button class="btn" data-act="regler-lignes">Tout régler automatiquement</button><span class="hint" style="margin:0">Reconnaît les prestations et les produits fournis par le client, rattache les produits connus et crée les autres dans la Bibliothèque avec leurs pièces à demander.</span></div>
-    <div class="hint">Chaque ligne qui contient un produit doit avoir sa fiche technique ou son PV. Pour chaque ligne : choisis le produit de la bibliothèque, crée-le avec son PDF, ou indique que c'est une prestation sans produit (curage, nettoyage, main-d'œuvre…).</div>
-    ${ls.map(li=>`<div class="item" style="padding-inline:0">
-      <div class="t"><div><span class="num">${esc(li.numero)}</span>${esc(li.designation)}</div><span class="qty">${li.quantite??""} ${esc(li.unite||"")}</span></div>
-      ${li.produit_id?`<div class="hint">Le produit associé n'a aucune pièce exigée : ajoute-lui une fiche technique dans la Bibliothèque.</div>`:""}
-      <div class="row">
-        <select data-ligne="${li.id}" aria-label="Produit pour la ligne ${esc(li.numero)}" style="flex:1;min-width:180px"><option value="">Choisir un produit…</option>${opts}</select>
-        <button class="btn small" data-act="ligne-creer" data-id="${li.id}">+ Créer le produit</button>
-        <button class="btn ghost small" data-act="ligne-fiche" data-id="${li.id}" data-v="1">Prestation sans fiche</button>
-      </div>
-      ${S.creerPour===li.id?`<form data-form="creer-ligne" data-ligne="${li.id}" class="confirm" style="background:var(--accent-soft);margin-top:8px">
-        <div class="grid2">
-          <label class="f">Nom du produit<input type="text" id="cl-nom" required value="${esc(nomDepuisLigne(li.designation))}"></label>
-          <label class="f">Fournisseur<input type="text" id="cl-four" list="dl-four2" placeholder="Nom du fournisseur"></label>
-          <label class="f">Mots-clés pour les prochains devis<input type="text" id="cl-mots" value="${esc(motsDepuisLigne(li.designation))}"></label>
-          <label class="f">Type de pièce<select id="cl-type"><option>Fiche technique</option><option>PV feu</option><option>PV acoustique</option><option>PV</option><option>Notice de pose</option><option>FDS</option></select></label>
-        </div>
-        <datalist id="dl-four2">${S.fourn.map(f=>`<option value="${esc(f.nom)}">`).join("")}</datalist>
-        <label class="f">PDF de la fiche (facultatif, tu pourras l'ajouter plus tard)<input type="file" id="cl-pdf" accept=".pdf,image/*"></label>
-        <div class="row"><button class="btn small" type="submit">Créer et relier</button><button class="btn ghost small" type="button" data-act="ligne-creer-non">Annuler</button></div>
-      </form>`:""}
-    </div>`).join("")}
-  </div>`;
-}
-const nomDepuisLigne=d=>{ let t=String(d).replace(/^(option|variante)\s*\d*\s*[-–:]?\s*/i,"");
-  for(let k=0;k<2;k++) t=t.replace(/^(fourniture et pose|fourniture et mise en place|f\s*\/\s*p|fourniture|pose|remplacement|cr[ée]ation|mise en place|installation|r[ée]alisation|ajout|compl[ée]ment)\s+(d['’]\s*une?\s+|d['’]\s*|de la |de l['’]|des |du |de |d['’]un |d['’]une |une? |les? |la )?/i,"").trim();
-  const pc=produitCache(d); if(pc) return pc.nom;
-  t=t.split(/[.,;(]/)[0].trim().replace(/\bissus de secours/i,"issue de secours"); return harmoniser(t.slice(0,60)); };
-const motsDepuisLigne=d=>produitCache(d)?produitCache(d).cle:motsUtiles(nomDepuisLigne(d)).slice(0,2).join(" ");
 
 /* ---- Onglet Relances ---- */
 function manquantesParFournisseur(){
@@ -612,7 +475,7 @@ function attestationPose(l){
     </table>
     <div class="fin">
       <div>Les travaux ont été effectués selon les règles de l'art et menés régulièrement à bonne fin.</div>
-      <div><b>Signataire :</b> ${esc(e.nom)}${signataireChantier(c,e)?" — "+esc(signataireChantier(c,e)):""}</div>
+      <div><b>Signataire :</b> ${esc(e.nom)}${c.signataire?" — "+esc(c.signataire):""}</div>
       <div><b>Date :</b> ${frDate(c.date_attestation||c.date_reception)}</div>
       <div class="sigbox"></div>
     </div>
@@ -630,22 +493,7 @@ function tabDOE(){
   }).join("");
   const atts=S.lots.map(l=>attestationPose(l)).join("");
   const miss=[!c.maitre_ouvrage&&"maître d'ouvrage",!c.designation_travaux&&"désignation des travaux",!c.date_debut&&"date de début",!c.date_fin&&"date de fin",(c.montant_ht==null)&&"montant HT"].filter(Boolean);
-  const chCov=mediaUrl(c.couverture_path), entCov=mediaUrl(e.couverture_path);
-  const garde=pageGarde(c,e,{logo:mediaUrl(e.logo_path),cover:chCov||entCov,lots:S.lots});
   return `<div class="box">
-      <div class="row between"><h2>Page de garde</h2><button class="link" data-act="entreprise">Modifier les infos société</button></div>
-      <div class="ent-grid garde">
-        <div style="display:flex;flex-direction:column;gap:10px">
-          <div class="hint">Logo, coordonnées et mentions légales viennent de la page Entreprise. La photo de couverture peut être propre à ce chantier.</div>
-          <div class="media"><div class="thumb cov" style="${chCov||entCov?`background-image:url('${chCov||entCov}')`:""}"></div>
-            <div style="display:flex;flex-direction:column;gap:6px;align-items:flex-start">
-              <label class="up" for="ch-cov">${chCov?"Remplacer la photo du chantier":"+ Photo de ce chantier"}<input type="file" id="ch-cov" accept="image/*"></label>
-              ${chCov?`<button class="link" data-act="ch-cov-del">Revenir à la photo de l'entreprise</button>`:`<span class="hint">${entCov?"Photo par défaut de l'entreprise":"Aucune photo : la page de garde s'en passe"}</span>`}</div></div>
-        </div>
-        <div class="pv">${garde}</div>
-      </div>
-    </div>
-    <div class="box">
       <div class="row between"><h2>Attestations de pose</h2><span class="badge">${S.lots.length} attestation${S.lots.length>1?"s":""}</span></div>
       <div class="hint">Une attestation par lot, au format MAGENCIA, remplie avec le devis. ${miss.length?`<b>À compléter :</b> ${miss.join(", ")}.`:"Toutes les informations sont renseignées."}</div>
       <details ${miss.length?"open":""}><summary>Informations des attestations</summary>
@@ -674,7 +522,12 @@ function tabDOE(){
     <div class="row between"><h2>Aperçu du DOE</h2><button class="btn" data-act="print">Imprimer / PDF du DOE</button></div>
     <div class="hint">Le DOE imprimé contient la page de garde, le sommaire et les attestations. La fusion automatique des fiches techniques en un seul PDF viendra dans une prochaine version.</div>
     <div class="sheet" id="sheet">
-      <div class="pv cover-pv" style="align-self:center">${garde}</div>
+      <div class="cover">
+        <div class="kicker">Dossier des Ouvrages Exécutés</div>
+        <div class="ttl">${esc(c.nom)}</div>
+        <dl><dt>Adresse</dt><dd>${esc(c.adresse||"—")}</dd><dt>Maître d'ouvrage</dt><dd>${esc(c.maitre_ouvrage||"—")}</dd><dt>Maître d'œuvre</dt><dd>${esc(c.maitre_oeuvre||"—")}</dd>
+        <dt>Entreprise</dt><dd>${esc(e.nom)}${e.adresse?" — "+esc(e.adresse):""}</dd>${e.siret?`<dt>SIRET</dt><dd class="mono">${esc(e.siret)}</dd>`:""}<dt>Réception</dt><dd>${frDate(c.date_reception)}</dd><dt>Complétude</dt><dd class="mono">${s.pct} %</dd></dl>
+      </div>
       <h2>Sommaire</h2><ul class="toc">${toc||"<li>Aucun lot.</li>"}</ul>
       ${atts}
     </div>`;
@@ -703,72 +556,15 @@ function viewBiblio(){
         <label class="f">Pièces exigées (séparées par des virgules)<input type="text" id="p-pieces" value="Fiche technique"></label>
         <button class="btn" type="submit">Ajouter le produit</button>
       </form></details>
-    <div class="recherche"><input type="search" id="rech-biblio" placeholder="Rechercher un produit, une marque, un mot-clé, un fichier…" value="${esc(S.rech||"")}" autocomplete="off" aria-label="Rechercher dans la bibliothèque"><span class="hint" id="rech-nb"></span></div>
-    <div class="list" id="liste-biblio">${S.produits.map(p=>`<article class="lot" data-rech="${esc(norm([p.nom,p.dtu,p.fournisseurs?.nom,(p.mots_cles||[]).join(" "),...p.pieces_requises.map(r=>r.libelle+" "+r.documents.map(d=>d.nom_fichier).join(" "))].join(" ")))}">
-      <header><h3 style="min-width:0">${esc(p.nom)}</h3><div class="row"><span class="badge">${esc(p.dtu||"sans DTU")}${p.fournisseurs?" · "+esc(p.fournisseurs.nom):""}</span>
-        <button class="link" style="color:var(--bad);font-size:13px" data-act="del-prod" data-id="${p.id}">Supprimer</button></div></header>
-      ${S.delProd&&S.delProd.id===p.id?`<div class="item"><div class="confirm">
-        <div><b>Supprimer « ${esc(p.nom)} » ?</b> ${(()=>{ const nd=p.pieces_requises.reduce((a,r)=>a+r.documents.length,0); return `${p.pieces_requises.length} pièce${p.pieces_requises.length>1?"s":""} exigée${p.pieces_requises.length>1?"s":""} et ${nd} document${nd>1?"s":""} seront supprimés définitivement.`; })()}
-        ${S.delProd.nbLignes?` Il est utilisé par ${S.delProd.nbLignes} ligne${S.delProd.nbLignes>1?"s":""} de devis : ces lignes resteront, sans produit associé.`:" Il n'est utilisé dans aucun devis."}</div>
-        <div class="row"><button class="btn danger small" data-act="del-prod-yes">Supprimer définitivement</button><button class="btn ghost small" data-act="del-prod-no">Annuler</button></div></div></div>`:""}
+    <div class="list">${S.produits.map(p=>`<article class="lot">
+      <header><h3 style="min-width:0">${esc(p.nom)}</h3><span class="badge">${esc(p.dtu||"sans DTU")}${p.fournisseurs?" · "+esc(p.fournisseurs.nom):""}</span></header>
       <div class="item"><div class="prod">Mots-clés : <span class="mono">${esc((p.mots_cles||[]).join(", ")||"—")}</span></div></div>
       ${p.pieces_requises.map(r=>{ const d=r.documents.slice().sort((a,b)=>b.created_at.localeCompare(a.created_at))[0]; return `<div class="item"><div class="row between">
         <div style="min-width:0"><div>${esc(r.libelle)}</div><div class="hint mono" style="overflow-wrap:anywhere">${d?esc(d.nom_fichier)+" · "+new Date(d.created_at).toLocaleDateString("fr-FR"):"Aucun document"}</div></div>
         <div class="chips">${d?`<button class="chip ok" data-act="opendoc" data-path="${esc(d.storage_path)}">Ouvrir</button>`:""}
-          <label class="up" for="lib-${r.id}">${d?"Remplacer":"+ Ajouter le PDF"}<input type="file" id="lib-${r.id}" accept=".pdf,image/*" data-piece="${r.id}" data-produit="${p.id}"></label>
-          <button class="link" style="color:var(--bad);font-size:12.5px" data-act="del-piece" data-id="${r.id}" aria-label="Supprimer ${esc(r.libelle)}">Supprimer</button></div>
-      </div>${S.delPiece===r.id?`<div class="confirm" style="margin-top:8px">
-        <div><b>Supprimer « ${esc(r.libelle)} » de ce produit ?</b> ${r.documents.length?`${r.documents.length>1?"Les "+r.documents.length+" documents joints seront supprimés":"Le document joint sera supprimé"} définitivement.`:"Aucun document n'est joint."} Cette pièce ne sera plus demandée dans les DOE.</div>
-        <div class="row"><button class="btn danger small" data-act="del-piece-yes">Supprimer définitivement</button><button class="btn ghost small" data-act="del-piece-no">Annuler</button></div></div>`:""}</div>`;}).join("")}
+          <label class="up" for="lib-${r.id}">${d?"Remplacer":"+ Ajouter le PDF"}<input type="file" id="lib-${r.id}" accept=".pdf,image/*" data-piece="${r.id}" data-produit="${p.id}"></label></div>
+      </div></div>`;}).join("")}
     </article>`).join("")}</div>
-  </section>`;
-}
-
-/* ---- Entreprise ---- */
-function viewEntreprise(){
-  const e=S.ent, v=k=>esc(e[k]||"");
-  const ex=S.chantiers[0]||{nom:"Nom du chantier",designation_travaux:"Désignation des travaux",adresse:"Adresse du chantier",maitre_ouvrage:"Maître d'ouvrage",maitre_oeuvre:"Maître d'œuvre",date_reception:null};
-  const champ=(id,lbl,ph="")=>`<label class="f">${lbl}<input type="text" id="e-${id}" value="${v(id)}" placeholder="${esc(ph)}"></label>`;
-  const logo=mediaUrl(e.logo_path), cov=mediaUrl(e.couverture_path);
-  return `<section class="panel">
-    <div class="row between"><h1>Entreprise</h1><span class="badge">page de garde · attestations</span></div>
-    <div class="ent-grid">
-      <form class="box" data-form="entreprise">
-        <div class="hint">Ces informations remplissent la page de garde du DOE, la page d'identification, le pied de chaque page et les attestations de pose.</div>
-        <h2>Identité</h2>
-        <div class="grid2">
-          ${champ("nom","Raison sociale")}${champ("forme_juridique","Forme juridique","SAS")}
-          ${champ("capital","Capital social","100 000 €")}${champ("siret","SIRET")}
-          ${champ("rcs","RCS","RCS Bordeaux 519 328 033")}${champ("ape","Code APE","4332 C")}
-          ${champ("tva_intra","N° TVA intracommunautaire")}${champ("qualifications","Qualifications","Qualibat")}
-        </div>
-        ${champ("assurance_decennale","Assurance décennale","AXA (Marmande), couverture France")}
-        <h2>Coordonnées</h2>
-        <div class="grid2">
-          ${champ("adresse","Adresse")}${champ("code_postal","Code postal")}
-          ${champ("ville","Ville (pour « Fait à … »)")}${champ("telephone","Téléphone")}
-          ${champ("email","E-mail")}${champ("site_web","Site web")}
-        </div>
-        <h2>Signataire</h2>
-        <div class="grid2">${champ("signataire_nom","Nom","Prénom NOM")}${champ("signataire_fonction","Fonction","Gérant")}</div>
-        <h2>Visuels</h2>
-        <div class="media"><div class="thumb" style="${logo?`background-image:url('${logo}')`:""}"></div>
-          <div class="row"><label class="up" for="e-logo">${logo?"Remplacer le logo":"+ Ajouter le logo"}<input type="file" id="e-logo" accept="image/png,image/jpeg,image/svg+xml,image/webp" data-entimg="logo_path"></label>
-          ${logo?`<button class="link" type="button" data-act="ent-img-del" data-k="logo_path">Retirer</button>`:""}</div></div>
-        <div class="hint">Sans logo, la page de garde affiche un monogramme avec l'initiale et le nom de l'entreprise, dans la couleur ci-dessous. Un PNG à fond transparent rend le mieux.</div>
-        <div class="media"><div class="thumb cov" style="${cov?`background-image:url('${cov}')`:""}"></div>
-          <div class="row"><label class="up" for="e-cov">${cov?"Remplacer la photo":"+ Photo de couverture"}<input type="file" id="e-cov" accept="image/*" data-entimg="couverture_path"></label>
-          ${cov?`<button class="link" type="button" data-act="ent-img-del" data-k="couverture_path">Retirer</button>`:""}</div></div>
-        <div class="hint">Photo par défaut de tous les DOE. Chaque chantier peut avoir sa propre photo, dans l'onglet DOE.</div>
-        <label class="f">Couleur de la marque<input type="color" id="e-couleur" value="${esc(/^#[0-9a-f]{6}$/i.test(e.couleur||"")?e.couleur:"#1f4fa3")}"></label>
-        <button class="btn" type="submit">Enregistrer</button>
-      </form>
-      <div style="display:flex;flex-direction:column;gap:8px;position:sticky;top:12px">
-        <h2>Aperçu de la page de garde</h2>
-        <div class="pv">${pageGarde(ex,e,{logo,cover:cov})}</div>
-        <div class="hint">${S.chantiers[0]?"Avec le chantier le plus récent, « "+esc(ex.nom)+" ».":"Avec un chantier fictif."} Enregistre pour mettre l'aperçu à jour.</div>
-      </div>
-    </div>
   </section>`;
 }
 
@@ -777,79 +573,26 @@ async function goHome(){ S.view="chantiers"; S.ch=null; await loadChantiers(); r
 async function openChantier(id){
   S.ch=S.chantiers.find(c=>c.id===id); S.view="chantier"; S.confirmReplace=false;
   $("#app").innerHTML=`<div class="loading">Chargement du chantier…</div>`;
-  await loadBiblio(); await loadChantierData(); await loadMedia([S.ch.couverture_path]);
+  await loadBiblio(); await loadChantierData();
   S.tab=S.lots.length?"pieces":"devis"; render(); window.scrollTo({top:0});
 }
 async function refreshChantier(){ await loadBiblio(); await loadChantierData(); render(); }
 
-/* Prestation sans produit : pas de fiche technique à fournir */
-const RE_PRESTATION=/^(curage|nettoyage|d[ée]pose|d[ée]molition|d[ée]montage|tranch[ée]e|terrassement|fouille|[ée]vacuation|enl[èe]vement|location|transport|nacelle|[ée]chafaudage|main[- ]d.?[oœ]euvre|installation de chantier|repli|protection|bouchage|reprise|rebouchage|d[ée]blai|remblai|d[ée]placement|[ée]tude|relev[ée]|plans?\b|dossier|doe\b|essais?|contr[ôo]le|mise en service|raccordement|d[ée]barras|gardiennage|traitement des espaces verts|compl[ée]ment traitement|entretien|r[ée]glage|ajustement|piquetage|percement|carottage|saign[ée]e)/i;
-// Produits cachés dans une ligne de prestation (ex. « Reprise peinture ou produit anti graffiti »)
-const PRODUITS_CACHES=[{re:/anti[- ]?graffiti/i,nom:"Produit anti-graffiti",cle:"graffiti"}];
-const produitCache=d=>PRODUITS_CACHES.find(x=>x.re.test(norm(d)));
-// Fourni par le client, ou pose seule : MAGENCIA ne fournit pas le produit, pas de fiche à donner
-const RE_SANS_FOURNITURE=/\bfourni(e|s|es)?\s+par\b|^pose\b(?!.*\bfourniture\b)/i;
-const estPrestation=d=>{ const t=String(d).replace(/^(option|variante)\s*\d*\s*[-–:]?\s*/i,"").trim();
-  return RE_SANS_FOURNITURE.test(t) || (!produitCache(d)&&RE_PRESTATION.test(t)); };
-function piecesPour(des){
-  const d=norm(des), p=["Fiche technique"];
-  if(/coupe[- ]?feu|pare[- ]?flamme|\bei\s?\d{2}|\bcf\s?\d|\bei\b|\brei\b/.test(d)) p.push("PV feu");
-  if(/acousti|\bdb\b|affaibliss/.test(d)) p.push("PV acoustique");
-  return p;
-}
-/* Classe une ligne : prestation sans fiche, produit reconnu, ou produit créé dans la bibliothèque */
-async function classerLigne(des, lotDes, cache, cpt){
-  if(/moins[- ]?value/i.test(lotDes||"") || estPrestation(des)){ cpt.presta++; return {p:null,sansFiche:true}; }
-  const pc=produitCache(des);
-  let p=pc ? S.produits.find(y=>(y.mots_cles||[]).some(k=>norm(k)===pc.cle))||null : matchProduit(des);
-  if(p){ cpt.m++; return {p,sansFiche:false}; }
-  const nom=nomDepuisLigne(des), cle=norm(nom);
-  p=cache[cle]||S.produits.find(y=>norm(y.nom)===cle);
-  if(!p){ const ent=S.ent.id;
-    const [np]=await q(sb.from("produits").insert({entreprise_id:ent,nom,mots_cles:[motsDepuisLigne(des)].filter(Boolean)}).select());
-    await q(sb.from("pieces_requises").insert(piecesPour(des).map((lib,k)=>({entreprise_id:ent,produit_id:np.id,libelle:lib,ordre:k}))));
-    p={...np,pieces_requises:piecesPour(des).map(l=>({libelle:l,documents:[]}))}; S.produits.push(p); cpt.crees++; }
-  else cpt.m++;
-  cache[cle]=p; return {p,sansFiche:false};
-}
-/* Règle d'un clic les lignes d'un chantier déjà importé */
-async function reglerLignes(){
-  const cache={}, cpt={m:0,crees:0,presta:0};
-  for(const li of lignesSansFiche()){
-    const lot=S.lots.find(l=>l.lignes_devis.some(x=>x.id===li.id));
-    if(li.produit_id){ const p=S.produits.find(y=>y.id===li.produit_id);
-      if(p && !(p.pieces_requises||[]).length){ await q(sb.from("pieces_requises").insert(piecesPour(li.designation).map((lib,k)=>({entreprise_id:S.ent.id,produit_id:p.id,libelle:lib,ordre:k})))); p.pieces_requises=[{}]; cpt.m++; }
-      continue; }
-    const r=await classerLigne(li.designation, lot&&lot.designation, cache, cpt);
-    await q(sb.from("lignes_devis").update({produit_id:r.p?r.p.id:null,sans_fiche:r.sansFiche}).eq("id",li.id));
-  }
-  toast(`${cpt.m} produits reconnus, ${cpt.crees} créés, ${cpt.presta} prestations sans fiche`);
-  await loadBiblio(); await loadChantierData(); render();
-}
 async function importDevis(){
   const lots=parseDevis($("#devis").value);
   if(!lots.length) return toast("Aucune ligne reconnue. Vérifie le format.");
-  const ent=S.ent.id, ch=S.ch.id; let n=0; const nouveaux={}, cpt={m:0,crees:0,presta:0};
+  const ent=S.ent.id, ch=S.ch.id; let n=0, m=0;
   for(let i=0;i<lots.length;i++){
     const L=lots[i];
     const [lot]=await q(sb.from("lots").insert({entreprise_id:ent,chantier_id:ch,numero:L.numero,designation:L.designation,ordre:i}).select());
-    if(!L.lignes.length) continue;
-    const rows=[];
-    for(const [j,x] of L.lignes.entries()){
-      n++; const {p,sansFiche}=await classerLigne(x.designation, L.designation, nouveaux, cpt);
-      rows.push({entreprise_id:ent,lot_id:lot.id,numero:x.numero,designation:x.designation,unite:x.unite,quantite:x.quantite,produit_id:p?p.id:null,sans_fiche:sansFiche,ordre:j});
+    if(L.lignes.length){
+      const rows=L.lignes.map((x,j)=>{ const p=matchProduit(x.designation); if(p) m++; n++;
+        return {entreprise_id:ent,lot_id:lot.id,numero:x.numero,designation:x.designation,unite:x.unite,quantite:x.quantite,produit_id:p?p.id:null,ordre:j}; });
+      await q(sb.from("lignes_devis").insert(rows));
     }
-    await q(sb.from("lignes_devis").insert(rows));
   }
-  // Infos du chantier depuis l'en-tête du PDF (seulement les champs encore vides)
-  const E=S.pdfEntete||{}, c=S.ch, upd={};
-  if(!c.maitre_ouvrage && E.client) upd.maitre_ouvrage=E.client;
-  if(c.montant_ht==null && E.totalHT!=null) upd.montant_ht=E.totalHT;
-  if(!c.designation_travaux && (E.objet||E.numero)) upd.designation_travaux=[E.objet&&norm(E.objet)!==norm(c.nom)?E.objet:"", E.numero?"Devis "+E.numero+(E.date?" du "+E.date:""):""].filter(Boolean).join(" — ");
-  if(Object.keys(upd).length){ const [c2]=await q(sb.from("chantiers").update(upd).eq("id",ch).select()); if(c2) majChantierLocal(c2); }
-  S.pdfEntete=null;
-  toast(`${n} lignes : ${cpt.m} produits reconnus, ${cpt.crees} créés, ${cpt.presta} prestations sans fiche`);
-  await loadBiblio(); await loadChantierData(); S.tab="pieces"; render();
+  toast(`${lots.length} lots, ${n} lignes importées, ${m} produits reconnus`);
+  await loadChantierData(); S.tab="pieces"; render();
 }
 
 async function replaceDevis(){
@@ -883,51 +626,6 @@ async function uploadPhotos(input){
   await loadChantierData(); render(); toast("Photos ajoutées");
 }
 
-/* ---- Fiche entreprise : enregistrement et visuels ---- */
-async function majEntreprise(upd){
-  const rows=await q(sb.from("entreprises").update(upd).eq("id",S.ent.id).select());
-  if(!rows.length){ toast("Modification refusée : lance maj-entreprise.sql ou demande à un administrateur."); throw new Error("refus"); }
-  S.ent=rows[0];
-}
-async function envoyerImage(file,dossier){
-  const reduit=dossier==="logo"?file:await reduireImage(file);
-  const ext=reduit.type==="image/png"?"png":reduit.type==="image/svg+xml"?"svg":reduit.type==="image/webp"?"webp":"jpg";
-  const path=`${S.ent.id}/${dossier}-${Date.now()}.${ext}`;
-  const {error}=await sb.storage.from("photos").upload(path,reduit,{contentType:reduit.type||"image/jpeg"});
-  if(error){ toast(messageErreur(error)); throw error; }
-  await loadMedia([path]); return path;
-}
-async function imageEntreprise(input){
-  const f=input.files[0]; if(!f) return; const k=input.dataset.entimg;
-  toast("Envoi de l'image…");
-  const ancien=S.ent[k];
-  const path=await envoyerImage(f,k==="logo_path"?"entreprise/logo":"entreprise/couverture");
-  await majEntreprise({[k]:path});
-  if(ancien) sb.storage.from("photos").remove([ancien]);
-  render(); toast(k==="logo_path"?"Logo enregistré":"Photo de couverture enregistrée");
-}
-async function retirerImageEntreprise(k){
-  const ancien=S.ent[k]; await majEntreprise({[k]:null});
-  if(ancien) sb.storage.from("photos").remove([ancien]);
-  render(); toast("Image retirée");
-}
-async function couvertureChantier(input){
-  const f=input.files[0]; if(!f) return;
-  toast("Envoi de la photo…");
-  const ancien=S.ch.couverture_path;
-  const path=await envoyerImage(f,`chantiers/${S.ch.id}/couverture`);
-  const [c]=await q(sb.from("chantiers").update({couverture_path:path}).eq("id",S.ch.id).select());
-  majChantierLocal(c); if(ancien) sb.storage.from("photos").remove([ancien]);
-  render(); toast("Photo de couverture du chantier enregistrée");
-}
-async function retirerCouvertureChantier(){
-  const ancien=S.ch.couverture_path;
-  const [c]=await q(sb.from("chantiers").update({couverture_path:null}).eq("id",S.ch.id).select());
-  majChantierLocal(c); if(ancien) sb.storage.from("photos").remove([ancien]);
-  render(); toast("Photo de l'entreprise rétablie");
-}
-function majChantierLocal(c){ S.ch=c; const i=S.chantiers.findIndex(x=>x.id===c.id); if(i>=0) S.chantiers[i]=c; }
-
 async function openDoc(path){
   const w=window.open("","_blank");
   const {data,error}=await sb.storage.from("documents").createSignedUrl(path,600);
@@ -960,171 +658,17 @@ async function creerProduit({nom,dtu,four,mots,pieces}){
   const [p]=await q(sb.from("produits").insert({entreprise_id:S.ent.id,nom,dtu:dtu||null,fournisseur_id:fid,mots_cles:mots}).select());
   if(pieces.length) await q(sb.from("pieces_requises").insert(pieces.map((l,i)=>({entreprise_id:S.ent.id,produit_id:p.id,libelle:l,ordre:i}))));
 }
-/* ===================== IMPORT DU DEVIS EN PDF ===================== */
-/* Lit le texte du PDF (pdf.js), reconstitue les lignes du tableau, puis remplit le cadre au format N°;Désignation;Unité;Quantité pour vérification. */
-const PDFJS_URL="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js", PDFJS_WORKER="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
-function chargerPdfJs(){
-  if(window.pdfjsLib) return Promise.resolve(window.pdfjsLib);
-  return new Promise((ok,ko)=>{ const s=document.createElement("script"); s.src=PDFJS_URL;
-    s.onload=()=>{ window.pdfjsLib.GlobalWorkerOptions.workerSrc=PDFJS_WORKER; ok(window.pdfjsLib); }; s.onerror=()=>ko(new Error("Lecteur PDF non chargé : vérifie ta connexion.")); document.head.appendChild(s); });
-}
-const UNITES={"m2":"m²","m²":"m²","m":"ml","ml":"ml","ml.":"ml","mètre":"ml","m3":"m³","m³":"m³","u":"u","u.":"u","un":"u","unité":"u","unite":"u","pce":"u","pc":"u","pièce":"u","piece":"u","ens":"ens","ensemble":"ens","ft":"ft","forfait":"ft","fft":"ft","fort":"ft","h":"h","heure":"h","kg":"kg","t":"t","l":"l","jour":"j","j":"j","lot":"lot","pm":"pm"};
-const estNombre=t=>/^-?\d{1,3}([  .]\d{3})*(,\d+)?$|^-?\d+([.,]\d+)?$/.test(String(t).trim());
-const versNombre=t=>parseFloat(String(t).replace(/[  ]/g,"").replace(/\.(?=\d{3}\b)/g,"").replace(",","."));
-const estNumero=t=>/^\d{1,3}(\.\d{1,3}){0,4}\.?$/.test(String(t).trim());
-async function lignesPdf(file){
-  const pdfjs=await chargerPdfJs(); const doc=await pdfjs.getDocument({data:await file.arrayBuffer()}).promise; const rangs=[];
-  for(let p=1;p<=doc.numPages;p++){
-    const page=await doc.getPage(p), tc=await page.getTextContent(), its=tc.items.filter(i=>i.str.trim()).map(i=>({s:i.str.trim(),x:i.transform[4],y:i.transform[5],w:i.width}));
-    its.sort((a,b)=>b.y-a.y||a.x-b.x); const groupes=[];
-    its.forEach(i=>{ const g=groupes.find(g=>Math.abs(g.y-i.y)<3); if(g) g.items.push(i); else groupes.push({y:i.y,items:[i]}); });
-    groupes.forEach(g=>{ g.items.sort((a,b)=>a.x-b.x); g.page=p; rangs.push(g); });
-  }
-  return rangs;
-}
-/* Infos d'en-tête du devis : n°, date, client, objet, total HT */
-function enteteDevisPdf(rangs){
-  const iTab=rangs.findIndex(r=>{ const t=r.items.map(i=>i.s).join(" "); return /d[ée]signation|libell[ée]/i.test(t)&&/qt|unit|prix/i.test(t); });
-  const avant=iTab>0?rangs.slice(0,iTab):rangs.filter(r=>r.page===1), tout=rangs.map(r=>r.items.map(i=>i.s).join(" "));
-  const e={};
-  const tx=avant.map(r=>r.items.map(i=>i.s).join(" ")).join("\n");
-  const mNum=tx.match(/\b(D|DE|DEV)[- ]?\d{4}[- ]\d{1,5}\b/)||tx.match(/devis\s*n[°o]?\s*:?\s*([A-Z0-9-]{3,})/i); if(mNum) e.numero=mNum[0].replace(/^devis\s*n[°o]?\s*:?\s*/i,"");
-  const mDate=tx.match(/(?:en date du|date)\s*:?\s*(\d{2}\/\d{2}\/\d{4})/i); if(mDate) e.date=mDate[1];
-  const droite=avant.filter(r=>r.page===1).flatMap(r=>{ const its=r.items.filter(i=>i.x>250), t=its.map(i=>i.s).join(" ");
-    if(!its.length||/:|valable|en date|^devis\b|^n°|\d{2}\/\d{2}\/\d{4}|\bD-\d{4}/i.test(t)) return []; return [{s:t,x:its[0].x,y:r.y}]; });
-  if(droite.length){ droite.sort((a,b)=>b.y-a.y); e.client=droite[0].s;
-    const adr=droite.slice(1,4).map(i=>i.s).filter(t=>!/^(france|tva|t[ée]l|email)/i.test(t)); if(adr.length) e.adresseClient=adr.join(", "); }
-  if(iTab>0){ for(let k=iTab-1;k>=Math.max(0,iTab-3);k--){ const r=rangs[k]; if(r.items.length===1&&r.items[0].x<200&&!/:/.test(r.items[0].s)&&!/^france$/i.test(r.items[0].s)){ e.objet=r.items[0].s; break; } } }
-  const reMt=/-?\d{1,3}(?:[\s\u00a0\u202f.]\d{3})*,\d{2}/g;
-  const tot=tout.filter(t=>/total\s*(net\s*)?h\.?t/i.test(t)&&!/sous/i.test(t)&&reMt.test(t)).pop(); reMt.lastIndex=0;
-  if(tot){ const m=tot.match(reMt); if(m) e.totalHT=versNombre(m[m.length-1]); }
-  return e;
-}
-function analyserDevisPdf(rangs){
-  // 1. Colonnes d'après la ligne d'en-tête du tableau
-  let col=null;
-  for(const r of rangs){ const t=r.items.map(i=>i.s).join(" ");
-    if(/d[ée]signation|libell[ée]/i.test(t) && /qt[ée]|quantit|unit|\bu\b|p\.?\s?u|prix/i.test(t)){
-      const x=re=>{ const i=r.items.find(i=>re.test(i.s)); return i?i.x:null; };
-      col={des:x(/d[ée]signation|libell[ée]/i), qte:x(/^(qt[ée]s?|quantit[ée]s?)(?![a-z])/i), u:x(/^(u\.?|unit[ée]s?)$/i), pu:x(/p\.?\s?u\b|prix|tva|total|montant/i)};
-      break; } }
-  const finDes=col?Math.min(...[col.qte,col.u,col.pu].filter(v=>v!=null).map(v=>v-4)):Infinity;
-  const out=[]; let dernier=null;
-  for(const r of rangs){
-    const items=r.items, texte=items.map(i=>i.s).join(" ");
-    if(/^(sous[- ]?total|total|montant|tva|net à payer|acompte|report|page\s+\d|conditions|pour le client)/i.test(texte)){ dernier=null; continue; }
-    if(/d[ée]signation/i.test(texte) && /qt|unit|prix/i.test(texte)) continue;
-    let num=null, reste=items;
-    if(estNumero(items[0].s) && (!col || col.des==null || items[0].x < col.des+6) && items.length>1){ num=items[0].s.replace(/\.$/,""); reste=items.slice(1); }
-    // texte de désignation et valeurs à droite
-    const des=[], droite=[];
-    // un nombre aligné à droite peut commencer avant l'en-tête « Qté » : on regarde où il finit
-    reste.forEach(i=>{ if(col && (i.x>=finDes || (estNombre(i.s) && i.x+i.w>=finDes))) droite.push(i); else des.push(i); });
-    if(!col){ // sans en-tête : les nombres et unités en fin de ligne vont à droite
-      while(des.length && (estNombre(des[des.length-1].s)||UNITES[norm(des[des.length-1].s)]||/€|%/.test(des[des.length-1].s))) droite.unshift(des.pop());
-    }
-    let designation=des.map(i=>i.s).join(" ").replace(/\s+/g," ").trim();
-    let unite="", qte=null;
-    const proche=(cx)=>droite.slice().sort((a,b)=>Math.abs(a.x-cx)-Math.abs(b.x-cx))[0];
-    const uItem=droite.find(i=>UNITES[norm(i.s).replace(/\s/g,"")]);
-    if(uItem) unite=UNITES[norm(uItem.s).replace(/\s/g,"")];
-    if(col && col.qte!=null){ const q=proche(col.qte); if(q && estNombre(q.s) && Math.abs(q.x-col.qte)<45) qte=versNombre(q.s); }
-    if(qte==null){ const nums=droite.filter(i=>estNombre(i.s)); if(nums.length){ const iu=uItem?droite.indexOf(uItem):-1;
-      const avant=iu>0&&estNombre(droite[iu-1].s)?droite[iu-1]:null, apres=iu>=0&&droite[iu+1]&&estNombre(droite[iu+1].s)?droite[iu+1]:null;
-      qte=versNombre((avant||apres||nums[0]).s); } }
-    if(num && designation && !unite && qte==null){ // titre : lot si numéro simple (« 2 »), sous-titre ignoré sinon (« 2.11 »)
-      if(!num.includes(".")) out.push({type:"lot",num,des:designation}); dernier=null; continue; }
-    if(num && designation){ dernier={type:"ligne",num,des:designation,unite:unite||"u",qte,y:r.y,page:r.page}; out.push(dernier); continue; }
-    // suite de la désignation sur la ligne suivante : même page, juste en dessous, alignée sur la colonne désignation
-    const x0=items[0].x, alignee=!col||col.des==null||Math.abs(x0-col.des)<40;
-    if(!num && designation && dernier && !unite && qte==null && alignee && r.page===dernier.page && dernier.y-r.y<22 && dernier.des.length<220){ dernier.des+=" "+designation; dernier.y=r.y; }
-    else if(!num) dernier=dernier&&r.page===dernier.page&&dernier.y-r.y<22?dernier:null;
-  }
-  return out.map(o=>o.type==="lot"?`${o.num};${o.des.replace(/;/g,",")};;`:`${o.num};${o.des.slice(0,240).replace(/;/g,",")};${o.unite};${o.qte!=null?String(o.qte).replace(".",","):""}`).join("\n");
-}
-async function importerPdfDevis(input){
-  const f=input.files[0]; if(!f) return;
-  toast("Lecture du PDF…");
-  try{
-    const debut=new Uint8Array(await f.slice(0,1024).arrayBuffer()), entete=String.fromCharCode(...debut);
-    if(!entete.includes("%PDF")){ toast("Ce fichier n'est pas un PDF."); input.value=""; return; }
-    const rangs=await lignesPdf(f), txt=analyserDevisPdf(rangs); S.pdfEntete=enteteDevisPdf(rangs);
-    const nb=txt?txt.split("\n").length:0;
-    if(!nb){ toast("Aucune ligne de devis trouvée dans ce PDF. Exporte-le en Excel depuis Obat et colle les lignes."); return; }
-    $("#devis").value=txt; S.pdfLu=f.name;
-    const E=S.pdfEntete, infos=[E.numero&&"devis "+esc(E.numero), E.client&&"client "+esc(E.client), E.totalHT!=null&&"total "+esc(euros(E.totalHT))].filter(Boolean);
-    const info=$("#pdf-info"); if(info) info.innerHTML=`<b>${esc(f.name)}</b> : ${txt.split("\n").filter(l=>/;;$/.test(l)).length} lots et ${txt.split("\n").filter(l=>!/;;$/.test(l)).length} lignes trouvés${infos.length?", "+infos.join(", "):""}. Clique sur « Importer le devis » : infos du chantier, produits et fiches à demander seront remplis automatiquement.`;
-    toast("PDF lu : vérifie puis importe");
-  }catch(e){ console.error(e); toast(e.message||"Lecture du PDF impossible"); }
-  input.value="";
-}
-
 /* ===================== DOE COMPLET (PDF unique) ===================== */
 const A4W=794, A4H=1123;
-const PF=`'IBM Plex Sans',Arial,sans-serif`, PFT=`Archivo,'IBM Plex Sans',Arial,sans-serif`;
-/* Charge les polices avant html2canvas, sinon il dessine en police de secours */
-async function chargerPolices(){
-  try{ await Promise.all(["400","500","600","700"].map(w=>document.fonts.load(`${w} 14px 'IBM Plex Sans'`)).concat(["700","800"].map(w=>document.fonts.load(`${w} 30px Archivo`)))); await document.fonts.ready; }catch(e){}
-}
 function pageHTML(inner, num, total){
   const e=S.ent, c=S.ch;
-  return `<div class="pg" style="width:${A4W}px;height:${A4H}px;box-sizing:border-box;padding:56px 60px 70px;background:#fff;color:#111;font-family:${PF};font-size:13px;line-height:1.45;position:relative;overflow:hidden">
+  return `<div class="pg" style="width:${A4W}px;height:${A4H}px;box-sizing:border-box;padding:56px 60px 70px;background:#fff;color:#111;font-family:Arial,Helvetica,sans-serif;font-size:13px;line-height:1.45;position:relative;overflow:hidden">
     <div style="display:flex;justify-content:space-between;font-size:10.5px;color:#555;border-bottom:1px solid #999;padding-bottom:6px;margin-bottom:22px"><span>DOE — ${esc(e.nom)}</span><span>${esc(c.nom)}</span></div>
     ${inner}
-    <div style="position:absolute;left:60px;right:60px;bottom:28px;display:flex;justify-content:space-between;font-size:10px;color:#666;border-top:1px solid #bbb;padding-top:6px"><span>${esc(piedSociete(e))}</span><span>Page ${num} sur ${total}</span></div>
+    <div style="position:absolute;left:60px;right:60px;bottom:28px;display:flex;justify-content:space-between;font-size:10px;color:#666;border-top:1px solid #bbb;padding-top:6px"><span>${esc(e.nom)}${e.siret?" – SIRET "+esc(e.siret):""}</span><span>Page ${num} sur ${total}</span></div>
   </div>`;
 }
-function monogramme(e,col,taille=56,txt="#18212b"){
-  const ini=(String(e.nom||"?").trim()[0]||"?").toUpperCase();
-  return `<div style="display:flex;align-items:center;gap:${Math.round(taille/4)}px">
-    <div style="width:${taille}px;height:${taille}px;border-radius:${Math.round(taille/5)}px;background:${col};color:#fff;font-weight:800;font-size:${Math.round(taille*.64)}px;line-height:${taille}px;text-align:center">${esc(ini)}</div>
-    <div style="font-size:${Math.round(taille*.42)}px;font-weight:800;letter-spacing:2px;color:${txt}">${esc(String(e.nom||"").toUpperCase())}</div></div>`;
-}
-/* Assombrit/éclaircit une couleur #rrggbb (f<0 assombrit) */
-function teinte(hex,f){ const n=parseInt(hex.slice(1),16); const ch=s=>{ const v=(n>>s)&255; return Math.round(f<0?v*(1+f):v+(255-v)*f); };
-  return "#"+[16,8,0].map(s=>ch(s).toString(16).padStart(2,"0")).join(""); }
-/* Page de garde : en-tête logo, bloc titre, photo en encart, fiche chantier, lots, bloc société. m = {logo, cover, lots} */
-function pageGarde(c,e,m={}){
-  const col=/^#[0-9a-f]{6}$/i.test(e.couleur||"")?e.couleur:"#1f4fa3", fonce=teinte(col,-.5), L=lignesSociete(e);
-  const titre=String(c.nom||"");
-  const info=(k,v)=>`<div style="padding:12px 0;border-top:1px solid #e5e7eb"><div style="font-size:10px;letter-spacing:1.6px;text-transform:uppercase;color:#6b7280;font-weight:700">${k}</div><div style="font-size:14px;margin-top:4px;font-weight:600;color:#111">${esc(v||"—")}</div></div>`;
-  const lots=[...new Set((m.lots||[]).map(l=>String(l.designation||"").replace(/\s*-\s*.*$/,"").trim()).filter(Boolean))].slice(0,6);
-  return `<div style="width:${A4W}px;height:${A4H}px;box-sizing:border-box;background:#fff;color:#111;font-family:${PF};position:relative;overflow:hidden">
-    <div style="padding:44px 56px 0">
-      <div style="display:flex;justify-content:space-between;align-items:center;gap:20px">
-        ${m.logo?`<img src="${m.logo}" alt="" style="max-height:92px;max-width:280px;display:block">`:monogramme(e,col,54)}</div>
-      <div style="margin-top:30px;border-radius:10px;overflow:hidden;position:relative;background:linear-gradient(135deg,${col} 0%,${fonce} 100%);color:#fff;padding:30px 34px 30px">
-        <div style="position:absolute;right:-24px;top:-30px;font-size:190px;font-weight:800;line-height:1;color:rgba(255,255,255,.08);letter-spacing:-6px">DOE</div>
-        <div style="position:relative">
-          <div style="font-size:11.5px;letter-spacing:3px;font-weight:700;color:rgba(255,255,255,.85)">DOSSIER DES OUVRAGES EXÉCUTÉS</div>
-          <div style="font-family:${PFT};font-size:${titre.length>30?32:titre.length>18?38:46}px;font-weight:800;line-height:1.08;margin-top:12px;letter-spacing:-.3px">${esc(titre)}</div>
-          ${c.designation_travaux?`<div style="font-size:15px;margin-top:8px;color:rgba(255,255,255,.85)">${esc(c.designation_travaux)}</div>`:""}
-        </div>
-      </div>
-      ${m.cover?`<div style="margin-top:22px;height:250px;border-radius:10px;background-color:#e5e7eb;background-image:url('${m.cover}');background-size:cover;background-position:center"></div>`:""}
-      <div style="margin-top:${m.cover?22:36}px;display:grid;grid-template-columns:1fr 1fr;column-gap:36px">
-        ${info("Maître d'ouvrage",c.maitre_ouvrage)}${info("Maître d'œuvre",c.maitre_oeuvre)}
-        ${info("Lieu des travaux",c.adresse)}${info("Réception des travaux",c.date_reception?frDate(c.date_reception):"")}
-      </div>
-      ${lots.length?`<div style="border-top:1px solid #e5e7eb;padding-top:12px">
-        <div style="font-size:10px;letter-spacing:1.6px;text-transform:uppercase;color:#6b7280;font-weight:700">Lots réalisés</div>
-        <div style="margin-top:8px">${lots.map(t=>`<span style="display:inline-block;margin:0 6px 6px 0;padding:5px 11px;border-radius:999px;background:${teinte(col,.9)};color:${teinte(col,-.3)};font-size:12px;font-weight:700">${esc(t)}</span>`).join("")}</div></div>`:""}
-    </div>
-    <div style="position:absolute;left:0;right:0;bottom:0;background:#f4f6f9;border-top:4px solid ${col};padding:20px 56px 18px">
-      <div style="display:flex;justify-content:space-between;align-items:flex-end;gap:24px">
-        <div style="font-size:10.5px;line-height:1.65;color:#4b5563">
-          <div style="font-family:${PFT};font-size:14px;font-weight:800;color:#111;letter-spacing:.5px">${esc(e.nom)}${L.forme?`<span style="font-weight:400;font-size:11.5px;color:#6b7280"> · ${esc(L.forme)}</span>`:""}</div>
-          ${L.adresse?`<div>${esc(L.adresse)}</div>`:""}${L.contact?`<div>${esc(L.contact)}</div>`:""}
-          ${L.legal?`<div>${esc(L.legal)}</div>`:""}${L.assur?`<div>${esc(L.assur)}</div>`:""}
-        </div>
-        <div style="text-align:right;font-size:10.5px;color:#6b7280;line-height:1.65;white-space:nowrap">
-          ${signataireChantier(c,e)?`<div>Signataire</div><div style="font-weight:700;color:#111;font-size:12px">${esc(signataireChantier(c,e))}</div>`:""}
-          <div style="margin-top:6px">Édité le ${new Date().toLocaleDateString("fr-FR")}</div></div>
-      </div>
-    </div>
-  </div>`;
-}
-const H2=t=>`<div style="font-family:${PFT};font-size:19px;font-weight:700;margin:6px 0 14px;color:#1a2b4a;letter-spacing:-.1px">${t}</div>`;
+const H2=t=>`<div style="font-size:17px;font-weight:700;margin:6px 0 12px;color:#1a2b4a">${t}</div>`;
 const TB=`style="width:100%;border-collapse:collapse;font-size:12px"`;
 const TD=(t,w)=>`<td style="border:1px solid #888;padding:5px 7px;vertical-align:top${w?";width:"+w:""}">${t}</td>`;
 const TH=(t,w)=>`<td style="border:1px solid #888;padding:5px 7px;background:#e9edf3;font-weight:700${w?";width:"+w:""}">${t}</td>`;
@@ -1172,8 +716,18 @@ async function genererDOE(){
 
   // 5. Pages du dossier
   const pages=[];
-  await loadMedia([e.logo_path,e.couverture_path,c.couverture_path]);
-  pages.push(pageGarde(c,e,{logo:mediaUrl(e.logo_path),cover:mediaUrl(c.couverture_path)||mediaUrl(e.couverture_path),lots:S.lots}));
+  pages.push(`<div style="width:${A4W}px;height:${A4H}px;box-sizing:border-box;padding:90px 70px;background:#fff;color:#111;font-family:Arial,Helvetica,sans-serif;display:flex;flex-direction:column;justify-content:space-between">
+    <div><div style="font-size:14px;letter-spacing:.2em;color:#555">${esc(e.nom)}</div>
+      <div style="margin-top:160px;font-size:15px;letter-spacing:.25em;color:#1a2b4a;font-weight:700">DOSSIER DES OUVRAGES EXÉCUTÉS</div>
+      <div style="font-size:38px;font-weight:800;margin-top:14px;line-height:1.1">${esc(c.nom)}</div>
+      <div style="font-size:16px;margin-top:12px;color:#333">${esc(c.designation_travaux||"")}</div>
+      <div style="width:90px;height:4px;background:#1a2b4a;margin-top:26px"></div>
+      <table style="margin-top:40px;font-size:14px;border-collapse:collapse">
+        <tr><td style="padding:4px 18px 4px 0;color:#555">Adresse</td><td>${esc(c.adresse||"—")}</td></tr>
+        <tr><td style="padding:4px 18px 4px 0;color:#555">Maître d'ouvrage</td><td>${esc(c.maitre_ouvrage||"—")}</td></tr>
+        <tr><td style="padding:4px 18px 4px 0;color:#555">Maître d'œuvre</td><td>${esc(c.maitre_oeuvre||"—")}</td></tr>
+        <tr><td style="padding:4px 18px 4px 0;color:#555">Réception</td><td>${frDate(c.date_reception)}</td></tr></table></div>
+    <div style="font-size:12px;color:#444;border-top:1px solid #999;padding-top:10px">${esc(e.nom)}${e.adresse?" — "+esc(e.adresse):""}${e.siret?"<br>SIRET "+esc(e.siret):""}<br>Édité le ${new Date().toLocaleDateString("fr-FR")}</div></div>`);
   const ligneSom=(t,pg,ind)=>`<div style="display:flex;gap:8px;padding:5px 0;${ind?"padding-left:22px;font-size:12px":"font-weight:700"}"><span>${t}</span><span style="flex:1;border-bottom:1px dotted #999;transform:translateY(-4px)"></span><span>${pg}</span></div>`;
   let som=H2("Sommaire")+ligneSom("A. Identification du chantier",3)+ligneSom("B. Matériaux mis en œuvre",pMat)+ligneSom("C. Attestations de pose",pAtt)
     +S.lots.map((l,i)=>ligneSom(`${esc(l.numero)} ${esc(l.designation)}`,pAtt+i,1)).join("")
@@ -1188,11 +742,7 @@ async function genererDOE(){
     <tr>${TH("Période des travaux")}${TD(esc([c.date_debut,c.date_fin].filter(Boolean).join(" → ")||""))}</tr><tr>${TH("Date de réception")}${TD(frDate(c.date_reception))}</tr>
     <tr>${TH("Montant HT des travaux")}${TD(esc(euros(c.montant_ht)))}</tr></table>
     <div style="height:22px"></div>${H2("Entreprise")}<table ${TB}>
-    <tr>${TH("Raison sociale","35%")}${TD(esc([e.nom,lignesSociete(e).forme].filter(Boolean).join(", ")))}</tr><tr>${TH("Adresse")}${TD(esc(adresseSociete(e)))}</tr>
-    <tr>${TH("Contact")}${TD(esc(lignesSociete(e).contact))}</tr><tr>${TH("SIRET")}${TD(esc(e.siret||""))}</tr>
-    <tr>${TH("RCS · APE · TVA")}${TD(esc([e.rcs,e.ape?"APE "+e.ape:"",e.tva_intra].filter(Boolean).join(" · ")))}</tr>
-    <tr>${TH("Assurance décennale")}${TD(esc(e.assurance_decennale||""))}</tr><tr>${TH("Qualifications")}${TD(esc(e.qualifications||""))}</tr>
-    <tr>${TH("Signataire")}${TD(esc(signataireChantier(c,e)))}</tr></table>
+    <tr>${TH("Raison sociale","35%")}${TD(esc(e.nom))}</tr><tr>${TH("Adresse")}${TD(esc(e.adresse||""))}</tr><tr>${TH("SIRET")}${TD(esc(e.siret||""))}</tr><tr>${TH("Signataire")}${TD(esc(c.signataire||S.nomAffiche||""))}</tr></table>
     <div style="height:22px"></div>${H2("Lots réalisés")}<table ${TB}><tr>${TH("Lot","12%")}${TH("Désignation")}${TH("Lignes","14%")}</tr>
     ${S.lots.map(l=>`<tr>${TD(esc(l.numero))}${TD(esc(l.designation))}${TD(l.lignes_devis.length)}</tr>`).join("")}</table>`,3,total));
   matChunks.forEach((ch,i)=>pages.push(pageHTML((i?"":H2("B. Matériaux mis en œuvre"))+`<table ${TB}><tr>${TH("Lot","20%")}${TH("Produit","27%")}${TH("Fabricant","13%")}${TH("DTU","10%")}${TH("Documents")}</tr>
@@ -1204,7 +754,6 @@ async function genererDOE(){
     +`<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">${pp.ph.map(x=>`<img crossorigin="anonymous" src="${esc(x.url)}" style="width:100%;height:290px;object-fit:cover;border:1px solid #ccc">`).join("")}</div>`,pPhoto+i,total)));
 
   // 6. Rendu des pages en PDF
-  await chargerPolices();
   log(`Mise en page de ${pages.length} page(s) du dossier…`);
   const host=document.createElement("div"); host.style.cssText="position:fixed;left:-10000px;top:0;width:"+A4W+"px"; document.body.appendChild(host);
   const {jsPDF}=window.jspdf; const doc=new jsPDF({unit:"pt",format:"a4",compress:true});
@@ -1284,17 +833,6 @@ async function importGroupe(input){
   await loadBiblio(); render(); toast(`${ok} document(s) importé(s)`);
 }
 
-async function supprimerProduit(){
-  const id=S.delProd.id;
-  const chemins=await q(sb.rpc("supprimer_produit",{p_produit:id}));
-  if(chemins && chemins.length) await sb.storage.from("documents").remove(chemins);
-  S.delProd=null; await loadBiblio(); render(); toast("Produit supprimé");
-}
-async function supprimerPiece(){
-  const chemins=await q(sb.rpc("supprimer_piece",{p_piece:S.delPiece}));
-  if(chemins && chemins.length) await sb.storage.from("documents").remove(chemins);
-  S.delPiece=null; await loadBiblio(); render(); toast("Pièce supprimée");
-}
 async function seedBiblio(){
   toast("Chargement de la bibliothèque…");
   for(const x of LIB_DEPART) await creerProduit({nom:x.nom,dtu:x.dtu,four:x.f,mots:x.mots,pieces:x.pieces});
@@ -1308,9 +846,6 @@ document.addEventListener("click",async e=>{
   try{
     if(a==="home") await goHome();
     else if(a==="biblio"){ S.view="biblio"; await loadBiblio(); render(); }
-    else if(a==="entreprise"){ S.view="entreprise"; S.ch=null; if(!S.chantiers.length) await loadChantiers(); render(); window.scrollTo({top:0}); }
-    else if(a==="ent-img-del") await busy(b,()=>retirerImageEntreprise(b.dataset.k));
-    else if(a==="ch-cov-del") await busy(b,retirerCouvertureChantier);
     else if(a==="logout"){ await sb.auth.signOut(); }
     else if(a==="authmode"){ S.authMode=S.authMode==="login"?"signup":"login"; render(); }
     else if(a==="open") await openChantier(b.dataset.id);
@@ -1324,33 +859,19 @@ document.addEventListener("click",async e=>{
     else if(a==="copymail") await copyMail(+b.dataset.i);
     else if(a==="sent") await busy(b,()=>markSent(+b.dataset.i));
     else if(a==="seed") await busy(b,seedBiblio);
-    else if(a==="del-prod"){ const {count}=await sb.from("lignes_devis").select("id",{count:"exact",head:true}).eq("produit_id",b.dataset.id); S.delProd={id:b.dataset.id,nbLignes:count||0}; render(); }
-    else if(a==="del-prod-no"){ S.delProd=null; render(); }
-    else if(a==="ligne-creer"){ S.creerPour=b.dataset.id; render(); const n=$("#cl-nom"); if(n) n.focus(); }
-    else if(a==="ligne-creer-non"){ S.creerPour=null; render(); }
-    else if(a==="regler-lignes") await busy(b,reglerLignes);
-    else if(a==="ligne-fiche") await busy(b,async()=>{ await q(sb.from("lignes_devis").update({sans_fiche:b.dataset.v==="1"}).eq("id",b.dataset.id)); await loadChantierData(); render(); toast(b.dataset.v==="1"?"Ligne marquée sans fiche":"Ligne remise à traiter"); });
-    else if(a==="del-piece"){ S.delPiece=b.dataset.id; S.delProd=null; render(); }
-    else if(a==="del-piece-no"){ S.delPiece=null; render(); }
-    else if(a==="del-piece-yes") await busy(b,supprimerPiece);
-    else if(a==="del-prod-yes") await busy(b,supprimerProduit);
     else if(a==="print"){ document.body.dataset.print="doe"; window.print(); }
     else if(a==="print-att"){ document.body.dataset.print="att"; window.print(); }
     else if(a==="doe-complet") await busy(b,genererDOE);
   }catch(err){}
 });
-document.addEventListener("input",e=>{ if(e.target.id==="rech-biblio") filtrerBiblio(); });
 document.addEventListener("keydown",e=>{ if(e.key==="Enter" && e.target.matches('[role="link"][data-act]')) e.target.click(); });
 
 document.addEventListener("change",async e=>{
   const t=e.target;
   try{
     if(t.id==="bulk-files") await importGroupe(t);
-    else if(t.id==="devis-pdf") await importerPdfDevis(t);
     else if(t.matches("input[type=file][data-piece]")) await uploadDoc(t);
     else if(t.matches("input[type=file][data-lotphoto]")) await uploadPhotos(t);
-    else if(t.matches("input[type=file][data-entimg]")) await imageEntreprise(t);
-    else if(t.id==="ch-cov") await couvertureChantier(t);
     else if(t.matches("select[data-ligne]")){
       await q(sb.from("lignes_devis").update({produit_id:t.value||null}).eq("id",t.dataset.ligne));
       await loadChantierData(); render(); toast("Ligne mise à jour");
@@ -1400,25 +921,6 @@ document.addEventListener("submit",async e=>{
       const [c]=await q(sb.from("chantiers").update(upd).eq("id",S.ch.id).select());
       S.ch=c; const i=S.chantiers.findIndex(x=>x.id===c.id); if(i>=0) S.chantiers[i]=c;
       render(); toast("Informations enregistrées");
-    }
-    if(k==="entreprise"){
-      const champs=["nom","forme_juridique","capital","siret","rcs","ape","tva_intra","qualifications","assurance_decennale","adresse","code_postal","ville","telephone","email","site_web","signataire_nom","signataire_fonction"];
-      const upd={}; champs.forEach(c=>upd[c]=$("#e-"+c).value.trim()||null);
-      if(!upd.nom) return toast("La raison sociale est obligatoire.");
-      upd.couleur=$("#e-couleur").value;
-      await majEntreprise(upd); render(); toast("Entreprise enregistrée");
-    }
-    if(k==="creer-ligne"){
-      const ligne=f.dataset.ligne, nom=$("#cl-nom").value.trim(), lib=$("#cl-type").value, fichier=$("#cl-pdf").files[0];
-      const mots=$("#cl-mots").value.split(",").map(x=>norm(x.trim())).filter(Boolean);
-      const fid=await fournisseurId($("#cl-four").value);
-      const [p]=await q(sb.from("produits").insert({entreprise_id:S.ent.id,nom,fournisseur_id:fid,mots_cles:mots}).select());
-      const [pc]=await q(sb.from("pieces_requises").insert({entreprise_id:S.ent.id,produit_id:p.id,libelle:lib,ordre:0}).select());
-      if(fichier){ const path=`${S.ent.id}/produits/${p.id}/${Date.now()}-${safeName(fichier.name)}`;
-        const {error}=await sb.storage.from("documents").upload(path,fichier,{contentType:fichier.type||"application/pdf"});
-        if(error) toast(messageErreur(error)); else await q(sb.from("documents").insert({entreprise_id:S.ent.id,piece_requise_id:pc.id,storage_path:path,nom_fichier:fichier.name,source:"upload"})); }
-      await q(sb.from("lignes_devis").update({produit_id:p.id}).eq("id",ligne));
-      S.creerPour=null; await refreshChantier(); toast(fichier?"Produit créé avec sa fiche":"Produit créé : ajoute sa fiche quand tu l'as");
     }
     if(k==="produit"){
       const split=v=>v.split(",").map(x=>x.trim()).filter(Boolean);
