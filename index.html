@@ -28,7 +28,7 @@ header.top{padding-block:16px 10px;display:flex;justify-content:space-between;al
 .brand{font-family:var(--f-display);font-weight:800;font-size:24px;letter-spacing:-.01em;cursor:pointer}
 .brand small{font-family:var(--f-body);font-weight:500;font-size:13px;color:var(--muted);margin-left:8px;letter-spacing:0}
 .mainnav{display:flex;gap:6px;flex-wrap:wrap}
-.tabs{position:sticky;top:0;z-index:5;background:var(--bg);padding-block:10px;display:grid;grid-template-columns:repeat(4,1fr);gap:5px;border-bottom:1px solid var(--line)}
+.tabs{position:sticky;top:0;z-index:5;background:var(--bg);padding-block:10px;display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:5px;border-bottom:1px solid var(--line)}
 .tabs button{font:inherit;font-size:13px;font-weight:600;border:1px solid var(--line);background:var(--surface);color:var(--muted);padding:8px 2px;border-radius:8px;cursor:pointer;min-width:0}
 .tabs button[aria-selected="true"]{border-color:var(--accent);color:var(--accent);background:var(--accent-soft)}
 button:focus-visible,input:focus-visible,textarea:focus-visible,select:focus-visible,a:focus-visible,label.up:focus-within{outline:2px solid var(--accent);outline-offset:2px}
@@ -38,7 +38,7 @@ h2{font-family:var(--f-display);font-weight:600;font-size:18px;margin:0;text-wra
 .box{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:16px;display:flex;flex-direction:column;gap:12px}
 .narrow{max-width:420px;margin:40px auto 0}
 .grid2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
-@media (max-width:560px){.grid2{grid-template-columns:1fr}}
+@media (max-width:560px){.grid2{grid-template-columns:1fr} .tabs button{font-size:11.5px;padding:8px 1px}}
 .grid3{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px}
 label.f{display:flex;flex-direction:column;gap:4px;font-size:12px;color:var(--muted);font-weight:500;letter-spacing:.02em}
 input[type=text],input[type=email],input[type=password],input[type=date],textarea,select{font:inherit;font-size:14px;color:var(--ink);background:var(--paper);border:1px solid var(--line);border-radius:6px;padding:8px 10px;width:100%;min-width:0}
@@ -115,7 +115,7 @@ details summary{cursor:pointer;font-weight:600;color:var(--accent)}
   .wrap{max-width:1320px;padding-left:max(32px,env(safe-area-inset-left,0px));padding-right:max(32px,env(safe-area-inset-right,0px))}
   header.top{position:sticky;top:0;z-index:6;background:var(--bg);padding-block:14px;border-bottom:1px solid var(--line);margin-bottom:6px}
   .brand{font-size:26px}
-  .tabs{top:64px;grid-template-columns:repeat(4,minmax(0,180px));justify-content:start}
+  .tabs{top:64px;grid-template-columns:repeat(5,minmax(0,170px));justify-content:start}
   .tabs button{font-size:14px;padding:9px 10px}
   h1{font-size:26px}
   .grid2{grid-template-columns:repeat(3,minmax(0,1fr))}
@@ -293,7 +293,11 @@ function coutLigne(li){
   const ok = li.quantite!=null && normU(li.unite)===normU(p.unite);
   return {p, total: ok ? li.quantite*Number(p.prix_ht) : null};
 }
-async function loadChantiers(){ S.chantiers=await q(sb.from("chantiers").select("*").order("created_at",{ascending:false})); }
+async function loadChantiers(){
+  S.chantiers=await q(sb.from("chantiers").select("*").order("created_at",{ascending:false}));
+  const {data,error}=await sb.from("depenses").select("chantier_id,montant_ht");
+  S.depAll={}; if(!error) data.forEach(d=>{ S.depAll[d.chantier_id]=(S.depAll[d.chantier_id]||0)+Number(d.montant_ht); });
+}
 async function loadBiblio(){
   S.fourn=await q(sb.from("fournisseurs").select("*").order("nom"));
   S.produits=await q(sb.from("produits").select("*, fournisseurs(id,nom,email), pieces_requises(id,libelle,ordre, documents(id,nom_fichier,storage_path,date_validite,created_at))").order("nom"));
@@ -315,6 +319,8 @@ async function loadChantierData(){
   }
   const ex=await sb.from("doe_exports").select("*").eq("chantier_id",id).order("created_at",{ascending:false}).limit(6);
   S.exports=ex.error?[]:ex.data;
+  const dp=await sb.from("depenses").select("*").eq("chantier_id",id).order("date_depense",{ascending:false});
+  S.depenses=dp.error?[]:dp.data; S.depErr=dp.error?(/does not exist|schema cache|relation/i.test(dp.error.message)?"manque":messageErreur(dp.error)):null;
   S.coverUrl=null;
   if(S.ch.photo_couverture){ const {data}=await sb.storage.from("photos").createSignedUrl(S.ch.photo_couverture,3600); S.coverUrl=data?.signedUrl||null; }
 }
@@ -385,15 +391,16 @@ function viewChantiers(){
     <div class="list chs">${S.chantiers.map(c=>`
       <button class="card" data-act="open" data-id="${c.id}">
         <div style="min-width:0"><div style="font-weight:600">${esc(c.nom)}</div><div class="meta">${esc(c.adresse||"Adresse non renseignée")}</div></div>
-        <span class="badge">${c.statut==="en_cours"?"réception "+frDate(c.date_reception):esc(c.statut.replace("_"," "))}</span>
+        <span style="display:flex;flex-direction:column;align-items:flex-end;gap:4px"><span class="badge">${c.statut==="en_cours"?"réception "+frDate(c.date_reception):esc(c.statut.replace("_"," "))}</span>
+        ${c.montant_ht?`<span class="badge" title="Montant HT – dépenses enregistrées">${eur2(c.montant_ht-(S.depAll?.[c.id]||0))} marge à date</span>`:""}</span>
       </button>`).join("") || `<div class="empty">Aucun chantier pour l'instant.</div>`}</div>
   </section>`;
 }
 
 function viewChantier(){
   const c=S.ch, t=S.tab;
-  const tabs=[["devis","Devis"],["pieces","Pièces"],["relances","Relances"],["doe","DOE"]];
-  let inner = t==="devis"?tabDevis(): t==="pieces"?tabPieces(): t==="relances"?tabRelances(): tabDOE();
+  const tabs=[["devis","Devis"],["pieces","Pièces"],["relances","Relances"],["doe","DOE"],["renta","Rentabilité"]];
+  let inner = t==="devis"?tabDevis(): t==="pieces"?tabPieces(): t==="relances"?tabRelances(): t==="renta"?tabRenta(): tabDOE();
   return `<div class="row between" style="padding-top:6px"><div style="min-width:0"><button class="link" data-act="home">← Chantiers</button><h1>${esc(c.nom)}</h1></div></div>
     <nav class="tabs" role="tablist">${tabs.map(([k,l])=>`<button role="tab" aria-selected="${t===k}" data-act="tab" data-tab="${k}">${l}${k==="pieces"?" · "+stats().pct+" %":""}</button>`).join("")}</nav>
     <section class="panel ${t==="devis"||t==="pieces"?"cols":""}">${inner}</section>`;
@@ -631,6 +638,77 @@ function tabDOE(){
       <h2>Sommaire</h2><ul class="toc">${toc||"<li>Aucun lot.</li>"}</ul>
       ${atts}
     </div>`;
+}
+
+/* ---- Onglet Rentabilité ---- */
+const CATS=[["materiaux","Matériaux"],["main_oeuvre","Main-d'œuvre"],["sous_traitance","Sous-traitance"],["location","Location / bennes"],["transport","Transport / livraison"],["autre","Autre"]];
+function budget(){
+  const c=S.ch;
+  const matAuto=S.lots.flatMap(l=>l.lignes_devis.map(coutLigne)).filter(Boolean).reduce((a,x)=>a+(x.total||0),0);
+  const mat=c.budget_matiere!=null?Number(c.budget_matiere):matAuto;
+  const mo=(Number(c.heures_prevues)||0)*(Number(c.taux_horaire)||0);
+  const prev={materiaux:mat,main_oeuvre:mo,sous_traitance:Number(c.budget_st)||0,location:0,transport:0,autre:Number(c.budget_autres)||0};
+  const reel={}; CATS.forEach(([k])=>reel[k]=0); (S.depenses||[]).forEach(d=>{ reel[d.categorie]=(reel[d.categorie]||0)+Number(d.montant_ht); });
+  const tp=Object.values(prev).reduce((a,b)=>a+b,0), tr=Object.values(reel).reduce((a,b)=>a+b,0);
+  return {matAuto,prev,reel,tp,tr,ca:Number(c.montant_ht)||0,av:Number(c.avancement)||0};
+}
+function tabRenta(){
+  if(S.depErr==="manque") return `<div class="box"><h2>Rentabilité</h2><div class="confirm" style="background:var(--warn-soft)">La base n'est pas encore à jour : lance le fichier <b>maj-rentabilite.sql</b> dans Supabase (SQL Editor → Run), puis recharge la page.</div></div>`;
+  const c=S.ch, b=budget(), pct=v=>b.ca?(v/b.ca*100).toFixed(1).replace(".",",")+" %":"—";
+  const margePrev=b.ca-b.tp, conso=b.tp?b.tr/b.tp*100:0, reste=b.tp*(1-b.av/100), margeFin=b.ca-(b.tr+Math.max(reste,0));
+  const alerte=b.tp&&conso>b.av+10;
+  const tile=(lbl,val,sub,cls)=>`<div class="box" style="gap:4px;padding:12px 14px"><div class="hint">${lbl}</div><div class="mono" style="font-size:20px;font-weight:600;${cls?"color:var(--"+cls+")":""}">${val}</div>${sub?`<div class="hint">${sub}</div>`:""}</div>`;
+  const nb=v=>v==null?"":String(v).replace(".",",");
+  return `<div class="box"><div class="row between"><h2>Rentabilité du chantier</h2><span class="badge">avancement ${nb(b.av)} %</span></div>
+      ${b.ca?"":`<div class="confirm" style="background:var(--warn-soft)">Renseigne le <b>montant HT du devis</b> ci-dessous pour calculer la marge.</div>`}
+      ${alerte?`<div class="confirm"><div>⚠️ <b>Dépassement :</b> ${conso.toFixed(0)} % du budget est déjà dépensé pour ${nb(b.av)} % d'avancement.</div></div>`:""}
+      <div class="grid3">
+        ${tile("Montant HT du devis",eur2(b.ca))}
+        ${tile("Marge prévue",eur2(margePrev),pct(margePrev),margePrev<0?"bad":"ok")}
+        ${tile("Dépensé à ce jour",eur2(b.tr),b.tp?`${conso.toFixed(0)} % du budget prévu`:"")}
+        ${tile("Marge estimée en fin de chantier",eur2(margeFin),pct(margeFin),margeFin<margePrev-1?"warn":"ok")}
+      </div>
+      <div class="hint">Marge estimée = montant HT − (dépenses à ce jour + budget restant selon l'avancement).</div>
+    </div>
+    <div class="tscroll"><table class="ptable"><thead><tr><th>Poste</th><th class="n">Prévu HT</th><th class="n">Réel HT</th><th class="n">Écart</th></tr></thead><tbody>
+      ${CATS.map(([k,l])=>{ const e=b.prev[k]-b.reel[k]; return (b.prev[k]||b.reel[k])?`<tr><td>${l}</td><td class="n">${eur2(b.prev[k])}</td><td class="n">${eur2(b.reel[k])}</td><td class="n" style="color:var(--${e<0?"bad":"ok"})">${e<0?"":"+"}${eur2(e)}</td></tr>`:""; }).join("")}
+      <tr style="font-weight:700"><td>Total</td><td class="n">${eur2(b.tp)}</td><td class="n">${eur2(b.tr)}</td><td class="n" style="color:var(--${b.tp-b.tr<0?"bad":"ok"})">${eur2(b.tp-b.tr)}</td></tr>
+    </tbody></table></div>
+    <details class="box" ${b.tp?"":"open"}><summary>Budget prévu et avancement</summary>
+      <form data-form="budget" style="display:flex;flex-direction:column;gap:12px;margin-top:12px">
+        <div class="grid3">
+          <label class="f">Montant HT du devis (€)<input type="text" inputmode="decimal" id="b-ca" value="${nb(c.montant_ht)}"></label>
+          <label class="f">Avancement (%)<input type="text" inputmode="decimal" id="b-av" value="${nb(c.avancement??0)}"></label>
+          <label class="f">Matériaux prévus (€)<input type="text" inputmode="decimal" id="b-mat" value="${nb(c.budget_matiere)}" placeholder="auto : ${eur2(b.matAuto)}"></label>
+          <label class="f">Heures de main-d'œuvre prévues<input type="text" inputmode="decimal" id="b-h" value="${nb(c.heures_prevues)}"></label>
+          <label class="f">Coût horaire chargé (€/h)<input type="text" inputmode="decimal" id="b-t" value="${nb(c.taux_horaire)}" placeholder="ex. 38"></label>
+          <label class="f">Sous-traitance prévue (€)<input type="text" inputmode="decimal" id="b-st" value="${nb(c.budget_st)}"></label>
+          <label class="f">Autres frais prévus (€)<input type="text" inputmode="decimal" id="b-au" value="${nb(c.budget_autres)}" placeholder="location, bennes, transport"></label>
+        </div>
+        <div class="hint">Matériaux : laisse vide pour utiliser le coût calculé avec tes prix d'achat (${eur2(b.matAuto)}, onglet Devis), ou saisis ton propre montant.</div>
+        <button class="btn" type="submit">Enregistrer le budget</button>
+      </form></details>
+    <div class="box"><div class="row between"><h2>Dépenses</h2><span class="badge">${(S.depenses||[]).length}</span></div>
+      <form data-form="depense" style="display:flex;flex-direction:column;gap:10px">
+        <div class="grid3">
+          <label class="f">Date<input type="date" id="d-date" value="${new Date().toISOString().slice(0,10)}"></label>
+          <label class="f">Poste<select id="d-cat">${CATS.map(([k,l])=>`<option value="${k}">${l}</option>`).join("")}</select></label>
+          <label class="f">Fournisseur<input type="text" id="d-four" list="dl-dfour" placeholder="Point.P Mérignac"></label>
+          <label class="f">Libellé<input type="text" id="d-lib" required placeholder="Plaques BA18, montants…"></label>
+          <label class="f">Montant HT (€)<input type="text" inputmode="decimal" id="d-mt" required></label>
+          <label class="f">N° de facture ou de bon<input type="text" id="d-ref"></label>
+        </div>
+        <datalist id="dl-dfour">${[...new Set((S.depenses||[]).map(d=>d.fournisseur).filter(Boolean))].map(f=>`<option value="${esc(f)}">`).join("")}</datalist>
+        <label class="f">Facture (PDF ou photo, facultatif)<input type="file" id="d-file" accept=".pdf,image/*"></label>
+        <button class="btn" type="submit">Ajouter la dépense</button>
+      </form>
+    </div>
+    ${(S.depenses||[]).length?`<div class="tscroll"><table class="ptable"><thead><tr><th>Date</th><th>Poste</th><th>Libellé</th><th class="n">Montant HT</th><th></th></tr></thead><tbody>
+      ${S.depenses.map(d=>`<tr><td class="mono" style="white-space:nowrap">${frDate(d.date_depense)}</td><td>${esc((CATS.find(x=>x[0]===d.categorie)||[,""])[1])}</td>
+        <td><div>${esc(d.libelle)}</div><div class="m">${esc([d.fournisseur,d.reference].filter(Boolean).join(" · "))}</div></td>
+        <td class="n">${eur2(d.montant_ht)}</td>
+        <td style="white-space:nowrap">${d.storage_path?`<button class="link" data-act="opendoc" data-path="${esc(d.storage_path)}">Facture</button> `:""}${S.depDel===d.id?`<button class="btn danger small" data-act="dep-del-yes" data-id="${d.id}">Supprimer</button> <button class="btn ghost small" data-act="dep-del-no">Annuler</button>`:`<button class="link" data-act="dep-del" data-id="${d.id}" aria-label="Supprimer">✕</button>`}</td></tr>`).join("")}
+    </tbody></table></div>`:`<div class="box empty">Aucune dépense enregistrée pour ce chantier.</div>`}`;
 }
 
 /* ---- Envoi du DOE par Gmail (lien de téléchargement du PDF archivé) ---- */
@@ -1172,6 +1250,9 @@ document.addEventListener("click",async e=>{
       if(error) return toast(messageErreur(error));
       location.href=data.signedUrl;
     }
+    else if(a==="dep-del"){ S.depDel=b.dataset.id; render(); }
+    else if(a==="dep-del-no"){ S.depDel=null; render(); }
+    else if(a==="dep-del-yes"){ await q(sb.from("depenses").delete().eq("id",b.dataset.id)); S.depDel=null; await loadChantierData(); render(); toast("Dépense supprimée"); }
     else if(a==="send-doe"){ S.sendId=b.dataset.id; render(); const t=$("#env-to"); if(t) t.focus(); }
     else if(a==="send-cancel"){ S.sendId=null; render(); }
     else if(a==="cover-pick") await busy(b,()=>setCover(b.dataset.path));
@@ -1255,6 +1336,24 @@ document.addEventListener("submit",async e=>{
       const [c]=await q(sb.from("chantiers").update(upd).eq("id",S.ch.id).select());
       S.ch=c; const i=S.chantiers.findIndex(x=>x.id===c.id); if(i>=0) S.chantiers[i]=c;
       render(); toast("Informations enregistrées");
+    }
+    if(k==="budget"||k==="depense"){
+      const num=id=>{ const v=String($(id).value).replace(/\s|€/g,"").replace(",","."); return v===""?null:Number(v); };
+      if(k==="budget"){
+        const upd={montant_ht:num("#b-ca"),avancement:num("#b-av")??0,budget_matiere:num("#b-mat"),heures_prevues:num("#b-h"),taux_horaire:num("#b-t"),budget_st:num("#b-st"),budget_autres:num("#b-au")};
+        if(Object.values(upd).some(v=>v!==null&&isNaN(v))) return toast("Montant invalide : écris un nombre, par exemple 1250,50");
+        if(upd.avancement<0||upd.avancement>100) return toast("Avancement entre 0 et 100 %");
+        const [c]=await q(sb.from("chantiers").update(upd).eq("id",S.ch.id).select());
+        S.ch=c; const i=S.chantiers.findIndex(x=>x.id===c.id); if(i>=0) S.chantiers[i]=c; render(); toast("Budget enregistré");
+      } else {
+        const mt=num("#d-mt"); if(mt===null||isNaN(mt)) return toast("Montant invalide : écris par exemple 1250,50");
+        let path=null; const file=$("#d-file").files[0];
+        if(file){ path=`${S.ent.id}/chantiers/${S.ch.id}/factures/${Date.now()}-${safeName(file.name)}`;
+          const {error}=await sb.storage.from("documents").upload(path,file,{contentType:file.type||"application/pdf"}); if(error){ toast(messageErreur(error)); return; } }
+        await q(sb.from("depenses").insert({entreprise_id:S.ent.id,chantier_id:S.ch.id,categorie:$("#d-cat").value,date_depense:$("#d-date").value||null,
+          fournisseur:$("#d-four").value.trim()||null,libelle:$("#d-lib").value.trim(),montant_ht:mt,reference:$("#d-ref").value.trim()||null,storage_path:path}));
+        await loadChantierData(); render(); toast("Dépense ajoutée");
+      }
     }
     if(k==="entreprise"){
       const v=id=>$("#e-"+id).value.trim()||null;
