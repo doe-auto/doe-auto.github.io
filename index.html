@@ -178,6 +178,7 @@ details summary{cursor:pointer;font-weight:600;color:var(--accent)}
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf-lib/1.17.1/pdf-lib.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 <script>
 /* ===================== CONFIG ===================== */
 const SB_URL = "https://ngsokjiivtukcnpkggtz.supabase.co";
@@ -312,7 +313,7 @@ async function loadChantierData(){
       ph.forEach(p=>{ (S.photos[p.lot_id]=S.photos[p.lot_id]||[]).push({...p,url:urls[p.storage_path]}); });
     }
   }
-  const ex=await sb.from("doe_exports").select("*").eq("chantier_id",id).order("created_at",{ascending:false}).limit(5);
+  const ex=await sb.from("doe_exports").select("*").eq("chantier_id",id).order("created_at",{ascending:false}).limit(6);
   S.exports=ex.error?[]:ex.data;
   S.coverUrl=null;
   if(S.ch.photo_couverture){ const {data}=await sb.storage.from("photos").createSignedUrl(S.ch.photo_couverture,3600); S.coverUrl=data?.signedUrl||null; }
@@ -609,7 +610,7 @@ function tabDOE(){
       ${S.doeUrl&&S.doeChantier===c.id?`<div class="row"><a class="btn" href="${S.doeUrl}" download="${esc(S.doeNom)}" target="_blank" rel="noopener">Télécharger le DOE (${esc(S.doeNom)})</a></div>`:""}
       ${S.doeLog?`<div class="bulk-log" id="doe-log">${esc(S.doeLog)}</div>`:""}
       ${(S.exports||[]).length?`<div class="box" style="padding:12px;gap:6px"><h2 style="font-size:15px">DOE déjà générés</h2>
-        ${S.exports.map(x=>`<div class="row between"><span class="mono" style="font-size:13px">${new Date(x.created_at).toLocaleString("fr-FR",{dateStyle:"short",timeStyle:"short"})}${x.completude!=null?" · "+x.completude+" %":""}</span>
+        ${S.exports.map(x=>`<div class="row between"><span style="font-size:13px"><b>${/\.zip$/i.test(x.storage_path)?"Dossier complet (ZIP) : DOE + fiches séparées":"DOE en un seul PDF"}</b> <span class="mono">· ${new Date(x.created_at).toLocaleString("fr-FR",{dateStyle:"short",timeStyle:"short"})}${x.completude!=null?" · "+x.completude+" %":""}</span></span>
           <span class="row"><button class="btn small" data-act="dl-doe" data-path="${esc(x.storage_path)}">Télécharger</button><button class="btn small ghost" data-act="send-doe" data-id="${x.id}">Envoyer par Gmail</button></span></div>
           ${S.sendId===x.id?formEnvoi(x):""}`).join("")}</div>`:""}
     </div>
@@ -641,7 +642,7 @@ Veuillez trouver ci-dessous le Dossier des Ouvrages Exécutés du chantier ${c.n
 
 Le document regroupe l'identification du chantier, les matériaux mis en œuvre, les attestations de pose, les photos ainsi que les fiches techniques et procès-verbaux en annexe.
 
-Lien de téléchargement (valable 30 jours) :
+${/\.zip$/i.test(x.storage_path)?"Le dossier (fichier ZIP) contient le DOE complet en PDF, ainsi que chaque fiche technique et chaque PV en fichier séparé.\n\n":""}Lien de téléchargement (valable 30 jours) :
 [LIEN]
 
 Restant à votre disposition.
@@ -934,7 +935,7 @@ async function genererDOE(){
       const {data,error}=await sb.storage.from("documents").createSignedUrl(a.path,600); if(error) throw error;
       const bytes=await (await fetch(data.signedUrl)).arrayBuffer();
       const pdf=await annexeEnPdf(bytes);
-      annexPdfs.push({...a,pdf,pages:pdf.getPageCount()}); log(`✓ Annexe ${i+1} : ${a.titre} (${pdf.getPageCount()} p.)`);
+      annexPdfs.push({...a,pdf,bytes,pages:pdf.getPageCount()}); log(`✓ Annexe ${i+1} : ${a.titre} (${pdf.getPageCount()} p.)`);
     }catch(err){ log(`✗ Annexe ignorée : ${a.titre} (${err.message||err})`); }
   }
 
@@ -1037,7 +1038,27 @@ async function genererDOE(){
   // Archive dans Supabase
   try{ const path=`${e.id}/chantiers/${c.id}/${Date.now()}-${nom}`; const {error}=await sb.storage.from("doe").upload(path,blob,{contentType:"application/pdf"});
     if(!error){ await sb.from("doe_exports").insert({entreprise_id:e.id,chantier_id:c.id,storage_path:path,completude:stats().pct}); log("✓ Copie archivée dans DOE Auto (conservation 10 ans)."); } else log("✗ Archive impossible : "+messageErreur(error)); }catch(err){ log("✗ Archive impossible : "+(err.message||err)); }
-  try{ const ex=await sb.from("doe_exports").select("*").eq("chantier_id",c.id).order("created_at",{ascending:false}).limit(5); if(!ex.error) S.exports=ex.data; }catch(err){}
+  // Dossier complet : DOE + chaque fiche technique / PV en fichier séparé, dans un ZIP
+  if(window.JSZip){
+    try{
+      log("Création du dossier complet (ZIP)…");
+      const zip=new JSZip(); zip.file(nom,out);
+      const dir=zip.folder("Fiches techniques et PV");
+      annexPdfs.forEach((a,i)=>{
+        const u=new Uint8Array(a.bytes.slice(0,2)); const ext=u[0]===0x89?"png":u[0]===0xFF?"jpg":"pdf";
+        const t=`${String(i+1).padStart(2,"0")} - Lot ${a.lot} - ${a.titre}`.replace(/[\/:*?"<>|]+/g,"-").slice(0,120);
+        dir.file(`${t}.${ext}`,a.bytes);
+      });
+      const zb=await zip.generateAsync({type:"blob",compression:"STORE"});
+      const zname=nom.replace(/\.pdf$/i,"_complet.zip");
+      const zpath=`${e.id}/chantiers/${c.id}/${Date.now()}-${zname}`;
+      const {error:ze}=await sb.storage.from("doe").upload(zpath,zb,{contentType:"application/zip"});
+      if(ze) log("✗ Dossier ZIP non archivé : "+messageErreur(ze));
+      else { await sb.from("doe_exports").insert({entreprise_id:e.id,chantier_id:c.id,storage_path:zpath,completude:stats().pct});
+        log(`✓ ${zname} : DOE + ${annexPdfs.length} fiches et PV séparés (${(zb.size/1048576).toFixed(1)} Mo).`); }
+    }catch(err){ log("✗ Dossier ZIP impossible : "+(err.message||err)); }
+  }
+  try{ const ex=await sb.from("doe_exports").select("*").eq("chantier_id",c.id).order("created_at",{ascending:false}).limit(6); if(!ex.error) S.exports=ex.data; }catch(err){}
   log("→ Si le fichier n'est pas dans tes Téléchargements, utilise le bouton « Télécharger » ci-dessous.");
   render();
 }
