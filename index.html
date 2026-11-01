@@ -109,6 +109,30 @@ details summary{cursor:pointer;font-weight:600;color:var(--accent)}
 .toast{position:fixed;left:50%;bottom:calc(20px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);background:var(--ink);color:var(--surface);padding:9px 14px;border-radius:8px;font-size:13px;opacity:0;transition:opacity .2s;pointer-events:none;max-width:calc(100% - 32px);z-index:50}
 .toast.on{opacity:1}
 @media (prefers-reduced-motion:reduce){*{transition:none!important}}
+/* ===== Affichage ordinateur ===== */
+@media (min-width:1024px){
+  body{font-size:15.5px}
+  .wrap{max-width:1320px;padding-left:max(32px,env(safe-area-inset-left,0px));padding-right:max(32px,env(safe-area-inset-right,0px))}
+  header.top{position:sticky;top:0;z-index:6;background:var(--bg);padding-block:14px;border-bottom:1px solid var(--line);margin-bottom:6px}
+  .brand{font-size:26px}
+  .tabs{top:64px;grid-template-columns:repeat(4,minmax(0,180px));justify-content:start}
+  .tabs button{font-size:14px;padding:9px 10px}
+  h1{font-size:26px}
+  .grid2{grid-template-columns:repeat(3,minmax(0,1fr))}
+  .narrow{max-width:460px}
+  /* listes en grille : chantiers, bibliothèque, relances, attestations */
+  .list{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));align-items:start}
+  .list.chs{grid-template-columns:repeat(3,minmax(0,1fr))}
+  .list>.empty{grid-column:1/-1}
+  /* onglets Devis et Pièces : les lots sur deux colonnes */
+  .panel.cols{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));align-items:start;gap:16px}
+  .panel.cols>*:not(.lot){grid-column:1/-1}
+  /* onglet DOE : réglages à gauche, aperçu à droite */
+  .sheet{padding:40px 48px}
+  .ptable{font-size:14px}
+  .ptable td:first-child{min-width:320px}
+}
+@media (min-width:1600px){ .wrap{max-width:1520px} .list.chs{grid-template-columns:repeat(4,minmax(0,1fr))} }
 /* Attestation de pose au format MAGENCIA (modèle FNTP) */
 .attp{background:#fff;color:#111;border:1px solid var(--line);border-radius:4px;padding:22px 20px;display:flex;flex-direction:column;gap:10px;font-size:13px}
 .attp h3{margin:0;font-family:var(--f-display);font-size:18px;text-align:center;letter-spacing:.02em}
@@ -364,7 +388,7 @@ function viewChantiers(){
         </div>
         <button class="btn" type="submit">Créer le chantier</button>
       </form></details>
-    <div class="list">${S.chantiers.map(c=>`
+    <div class="list chs">${S.chantiers.map(c=>`
       <button class="card" data-act="open" data-id="${c.id}">
         <div style="min-width:0"><div style="font-weight:600">${esc(c.nom)}</div><div class="meta">${esc(c.adresse||"Adresse non renseignée")}</div></div>
         <span class="badge">${c.statut==="en_cours"?"réception "+frDate(c.date_reception):esc(c.statut.replace("_"," "))}</span>
@@ -378,7 +402,7 @@ function viewChantier(){
   let inner = t==="devis"?tabDevis(): t==="pieces"?tabPieces(): t==="relances"?tabRelances(): tabDOE();
   return `<div class="row between" style="padding-top:6px"><div style="min-width:0"><button class="link" data-act="home">← Chantiers</button><h1>${esc(c.nom)}</h1></div></div>
     <nav class="tabs" role="tablist">${tabs.map(([k,l])=>`<button role="tab" aria-selected="${t===k}" data-act="tab" data-tab="${k}">${l}${k==="pieces"?" · "+stats().pct+" %":""}</button>`).join("")}</nav>
-    <section class="panel">${inner}</section>`;
+    <section class="panel ${t==="devis"||t==="pieces"?"cols":""}">${inner}</section>`;
 }
 
 /* ---- Onglet Devis ---- */
