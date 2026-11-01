@@ -610,7 +610,8 @@ function tabDOE(){
       ${S.doeLog?`<div class="bulk-log" id="doe-log">${esc(S.doeLog)}</div>`:""}
       ${(S.exports||[]).length?`<div class="box" style="padding:12px;gap:6px"><h2 style="font-size:15px">DOE déjà générés</h2>
         ${S.exports.map(x=>`<div class="row between"><span class="mono" style="font-size:13px">${new Date(x.created_at).toLocaleString("fr-FR",{dateStyle:"short",timeStyle:"short"})}${x.completude!=null?" · "+x.completude+" %":""}</span>
-          <button class="btn small" data-act="dl-doe" data-path="${esc(x.storage_path)}">Télécharger</button></div>`).join("")}</div>`:""}
+          <span class="row"><button class="btn small" data-act="dl-doe" data-path="${esc(x.storage_path)}">Télécharger</button><button class="btn small ghost" data-act="send-doe" data-id="${x.id}">Envoyer par Gmail</button></span></div>
+          ${S.sendId===x.id?formEnvoi(x):""}`).join("")}</div>`:""}
     </div>
     <div id="atts" class="list">${atts}</div>
     <div class="row between"><h2>Aperçu du DOE</h2><button class="btn" data-act="print">Imprimer / PDF du DOE</button></div>
@@ -629,6 +630,33 @@ function tabDOE(){
       <h2>Sommaire</h2><ul class="toc">${toc||"<li>Aucun lot.</li>"}</ul>
       ${atts}
     </div>`;
+}
+
+/* ---- Envoi du DOE par Gmail (lien de téléchargement du PDF archivé) ---- */
+function formEnvoi(x){
+  const c=S.ch, e=S.ent;
+  const corps=`Bonjour,
+
+Veuillez trouver ci-dessous le Dossier des Ouvrages Exécutés du chantier ${c.nom}${c.adresse?" ("+c.adresse+")":""}, au format PDF.
+
+Le document regroupe l'identification du chantier, les matériaux mis en œuvre, les attestations de pose, les photos ainsi que les fiches techniques et procès-verbaux en annexe.
+
+Lien de téléchargement (valable 30 jours) :
+[LIEN]
+
+Restant à votre disposition.
+
+Cordialement,
+${c.signataire||S.nomAffiche||""}
+${e.nom}${e.telephone?" – "+e.telephone:""}`;
+  return `<form class="box" data-form="envoi" data-path="${esc(x.storage_path)}" style="padding:12px;gap:8px;background:var(--paper)">
+    <label class="f">Destinataire(s)<input type="text" id="env-to" placeholder="moe@exemple.fr, client@exemple.fr" required></label>
+    <label class="f">Copie (facultatif)<input type="text" id="env-cc"></label>
+    <label class="f">Objet<input type="text" id="env-obj" value="${esc(`DOE – ${c.nom}`)}"></label>
+    <textarea class="mail" id="env-txt" spellcheck="true">${esc(corps)}</textarea>
+    <div class="hint">[LIEN] est remplacé par le lien du PDF à l'ouverture de Gmail. Gmail s'ouvre avec le message prêt : tu le relis et tu cliques sur Envoyer.</div>
+    <div class="row"><button class="btn" type="submit">Ouvrir dans Gmail</button><button class="btn ghost" type="button" data-act="send-cancel">Annuler</button></div>
+  </form>`;
 }
 
 /* ---- Bibliothèque ---- */
@@ -1074,6 +1102,21 @@ async function seedBiblio(){
   await loadBiblio(); render(); toast("9 produits ajoutés");
 }
 
+async function envoyerGmail(f){
+  const to=$("#env-to").value.trim(); if(!to) return toast("Indique au moins un destinataire");
+  const w=window.open("about:blank","_blank");   // ouvert tout de suite pour ne pas être bloqué
+  const nom=f.dataset.path.split("/").pop().replace(/^\d+-/,"");
+  const {data,error}=await sb.storage.from("doe").createSignedUrl(f.dataset.path,30*24*3600,{download:nom});
+  if(error){ if(w) w.close(); return toast(messageErreur(error)); }
+  const body=$("#env-txt").value.replace("[LIEN]",data.signedUrl);
+  const p=new URLSearchParams({view:"cm",fs:"1",to,su:$("#env-obj").value,body});
+  const cc=$("#env-cc").value.trim(); if(cc) p.set("cc",cc);
+  if(S.user?.email) p.set("authuser",S.user.email);
+  const url="https://mail.google.com/mail/?"+p.toString();
+  if(w) w.location=url; else location.href=url;
+  S.sendId=null; render(); toast("Gmail ouvert : relis le message et clique sur Envoyer");
+}
+
 /* ===================== ÉVÉNEMENTS ===================== */
 document.addEventListener("click",async e=>{
   const b=e.target.closest("[data-act]"); if(!b) return;
@@ -1108,6 +1151,8 @@ document.addEventListener("click",async e=>{
       if(error) return toast(messageErreur(error));
       location.href=data.signedUrl;
     }
+    else if(a==="send-doe"){ S.sendId=b.dataset.id; render(); const t=$("#env-to"); if(t) t.focus(); }
+    else if(a==="send-cancel"){ S.sendId=null; render(); }
     else if(a==="cover-pick") await busy(b,()=>setCover(b.dataset.path));
   }catch(err){}
 });
@@ -1152,6 +1197,7 @@ document.addEventListener("change",async e=>{
 
 document.addEventListener("submit",async e=>{
   const f=e.target.closest("[data-form]"); if(!f) return; e.preventDefault();
+  if(f.dataset.form==="envoi"){ envoyerGmail(f); return; }
   const btn=f.querySelector("button[type=submit]");
   await busy(btn,async()=>{
     const k=f.dataset.form;
