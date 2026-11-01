@@ -794,6 +794,27 @@ function tabRenta(){
     </tbody></table></div>`:`<div class="box empty">Aucune dépense enregistrée pour ce chantier.</div>`}`;
 }
 
+/* Avant de (re)générer : répare les lignes mal lues à l'import et associe les produits de la bibliothèque */
+async function reparerEtAssocier(){
+  await loadBiblio(); let corr=0, sup=0, asso=0;
+  for(const l of S.lots){ let k=0;
+    for(const li of l.lignes_devis){ k++;
+      const upd={};
+      // en-tête importé par erreur
+      if(/^(d[ée]signation|libell[ée]|description|n°?)$/i.test((li.numero||"").trim())||/^(d[ée]signation|quantit[ée]|qt[ée])$/i.test((li.designation||"").trim())){
+        await q(sb.from("lignes_devis").delete().eq("id",li.id)); sup++; continue; }
+      // colonnes décalées : texte dans « N° », nombre dans « Désignation »
+      if(/[a-zà-ÿ]{3}/i.test(li.numero||"") && !/[a-zà-ÿ]{3}/i.test(li.designation||"")){
+        upd.designation=li.numero; const qn=nombre(li.designation); if(qn!==null) upd.quantite=qn; upd.numero=`${l.numero}.${k}`; corr++; }
+      const des=upd.designation||li.designation;
+      if(!li.produit_id){ const p=matchProduit(des); if(p){ upd.produit_id=p.id; asso++; } }
+      if(Object.keys(upd).length) await q(sb.from("lignes_devis").update(upd).eq("id",li.id));
+    }
+  }
+  await loadChantierData();
+  return {corr,sup,asso};
+}
+
 /* ---- Contenu du DOE modifiable : sections, annexes, documents ajoutés ---- */
 const SECTIONS=[["garde","Page de garde"],["sommaire","Sommaire"],["ident","Identification du chantier"],["ouvrages","Ouvrages et matériaux"],["attestations","Attestations de pose"],["photos","Photos"]];
 function panneauContenu(){
@@ -1107,6 +1128,9 @@ async function genererDOE(){
   window.onerror=(m)=>log("✗ Erreur : "+m);
   if(!window.PDFLib||!window.html2canvas||!window.jspdf){ log("✗ Bibliothèques PDF non chargées : recharge la page."); return; }
   await loadChantierData();
+  try{ const r=await reparerEtAssocier();
+    log(`Devis vérifié : ${r.asso} ligne(s) associée(s) à un produit${r.corr?`, ${r.corr} ligne(s) corrigée(s)`:""}${r.sup?`, ${r.sup} ligne(s) d'en-tête supprimée(s)`:""}.`);
+  }catch(err){ log("✗ Vérification du devis impossible : "+(err.message||err)); }
   const c=S.ch, e=S.ent, byL=rowsByLigne();
   const cfg=c.doe_config||{}, sec={garde:true,sommaire:true,ident:true,ouvrages:true,attestations:true,photos:true,...(cfg.sections||{})};
   const exclus=new Set(cfg.exclus||[]);
@@ -1356,10 +1380,8 @@ document.addEventListener("click",async e=>{
     else if(a==="exemple"){ $("#devis").value=EXEMPLE_DEVIS; }
     else if(a==="import") await busy(b,importDevis);
     else if(a==="rematch") await busy(b,async()=>{
-      await loadBiblio(); let n=0;
-      for(const l of S.lots) for(const li of l.lignes_devis){ if(li.produit_id) continue; const p=matchProduit(li.designation);
-        if(p){ await q(sb.from("lignes_devis").update({produit_id:p.id}).eq("id",li.id)); n++; } }
-      await loadChantierData(); render(); toast(n?`${n} ligne(s) associée(s) à un produit de la bibliothèque`:"Aucun nouveau produit reconnu : associe-les à la main ou ajoute des mots-clés");
+      const r=await reparerEtAssocier(); render();
+      toast(r.asso||r.corr?`${r.asso} ligne(s) associée(s)${r.corr?`, ${r.corr} corrigée(s)`:""}`:"Aucun nouveau produit reconnu : associe-les à la main ou ajoute des mots-clés");
     });
     else if(a==="replace"){ S.confirmReplace=true; render(); }
     else if(a==="replace-no"){ S.confirmReplace=false; render(); }
