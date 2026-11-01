@@ -209,7 +209,7 @@ function messageErreur(e){
   if(/Email not confirmed/i.test(m)) return "Confirme d'abord ton e-mail (lien reçu par mail).";
   if(/permission denied/i.test(m)) return "Accès refusé par la base : vérifie les droits (voir la notice).";
   if(/row-level security/i.test(m)) return "Action refusée : cet élément n'appartient pas à ton entreprise.";
-  if(/supprimer_produit/i.test(m)) return "La base n'est pas à jour : lance supprimer-produit.sql dans Supabase.";
+  if(/supprimer_(produit|piece)/i.test(m)) return "La base n'est pas à jour : lance supprimer-produit.sql dans Supabase.";
   if(/schema cache|column .* does not exist/i.test(m)) return "La base n'est pas à jour : lance maj-entreprise.sql dans Supabase.";
   return m;
 }
@@ -662,8 +662,11 @@ function viewBiblio(){
       ${p.pieces_requises.map(r=>{ const d=r.documents.slice().sort((a,b)=>b.created_at.localeCompare(a.created_at))[0]; return `<div class="item"><div class="row between">
         <div style="min-width:0"><div>${esc(r.libelle)}</div><div class="hint mono" style="overflow-wrap:anywhere">${d?esc(d.nom_fichier)+" · "+new Date(d.created_at).toLocaleDateString("fr-FR"):"Aucun document"}</div></div>
         <div class="chips">${d?`<button class="chip ok" data-act="opendoc" data-path="${esc(d.storage_path)}">Ouvrir</button>`:""}
-          <label class="up" for="lib-${r.id}">${d?"Remplacer":"+ Ajouter le PDF"}<input type="file" id="lib-${r.id}" accept=".pdf,image/*" data-piece="${r.id}" data-produit="${p.id}"></label></div>
-      </div></div>`;}).join("")}
+          <label class="up" for="lib-${r.id}">${d?"Remplacer":"+ Ajouter le PDF"}<input type="file" id="lib-${r.id}" accept=".pdf,image/*" data-piece="${r.id}" data-produit="${p.id}"></label>
+          <button class="link" style="color:var(--bad);font-size:12.5px" data-act="del-piece" data-id="${r.id}" aria-label="Supprimer ${esc(r.libelle)}">Supprimer</button></div>
+      </div>${S.delPiece===r.id?`<div class="confirm" style="margin-top:8px">
+        <div><b>Supprimer « ${esc(r.libelle)} » de ce produit ?</b> ${r.documents.length?`${r.documents.length>1?"Les "+r.documents.length+" documents joints seront supprimés":"Le document joint sera supprimé"} définitivement.`:"Aucun document n'est joint."} Cette pièce ne sera plus demandée dans les DOE.</div>
+        <div class="row"><button class="btn danger small" data-act="del-piece-yes">Supprimer définitivement</button><button class="btn ghost small" data-act="del-piece-no">Annuler</button></div></div>`:""}</div>`;}).join("")}
     </article>`).join("")}</div>
   </section>`;
 }
@@ -1082,6 +1085,11 @@ async function supprimerProduit(){
   if(chemins && chemins.length) await sb.storage.from("documents").remove(chemins);
   S.delProd=null; await loadBiblio(); render(); toast("Produit supprimé");
 }
+async function supprimerPiece(){
+  const chemins=await q(sb.rpc("supprimer_piece",{p_piece:S.delPiece}));
+  if(chemins && chemins.length) await sb.storage.from("documents").remove(chemins);
+  S.delPiece=null; await loadBiblio(); render(); toast("Pièce supprimée");
+}
 async function seedBiblio(){
   toast("Chargement de la bibliothèque…");
   for(const x of LIB_DEPART) await creerProduit({nom:x.nom,dtu:x.dtu,four:x.f,mots:x.mots,pieces:x.pieces});
@@ -1113,6 +1121,9 @@ document.addEventListener("click",async e=>{
     else if(a==="seed") await busy(b,seedBiblio);
     else if(a==="del-prod"){ const {count}=await sb.from("lignes_devis").select("id",{count:"exact",head:true}).eq("produit_id",b.dataset.id); S.delProd={id:b.dataset.id,nbLignes:count||0}; render(); }
     else if(a==="del-prod-no"){ S.delProd=null; render(); }
+    else if(a==="del-piece"){ S.delPiece=b.dataset.id; S.delProd=null; render(); }
+    else if(a==="del-piece-no"){ S.delPiece=null; render(); }
+    else if(a==="del-piece-yes") await busy(b,supprimerPiece);
     else if(a==="del-prod-yes") await busy(b,supprimerProduit);
     else if(a==="print"){ document.body.dataset.print="doe"; window.print(); }
     else if(a==="print-att"){ document.body.dataset.print="att"; window.print(); }
