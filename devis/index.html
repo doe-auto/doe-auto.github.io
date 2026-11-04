@@ -32,7 +32,7 @@ a{color:var(--accent)}
 .nav{display:flex;align-items:center;gap:10px;padding:9px 18px;color:var(--ink);text-decoration:none;font-weight:500;border-left:3px solid transparent}
 .nav:hover{background:var(--sunk)}.nav.on{border-left-color:var(--accent);background:var(--accent-soft);color:var(--accent)}
 .nav svg{width:18px;height:18px;flex:none;stroke:currentColor;fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
-.nav.end{margin-top:auto}
+.nav.end{margin-top:auto}.head .doe-link{display:none}
 .main{min-width:0;padding-block:22px 40px;padding-left:max(24px,env(safe-area-inset-left,0px));padding-right:max(24px,env(safe-area-inset-right,0px));max-width:1240px;width:100%}
 .head{display:flex;flex-wrap:wrap;align-items:center;gap:10px;margin-bottom:16px}.head h1{margin-right:auto;min-width:0}
 .btn{font:500 14px var(--body);border:1px solid var(--line);background:var(--panel);color:var(--ink);padding:7px 12px;border-radius:4px;cursor:pointer;display:inline-flex;align-items:center;gap:6px;white-space:nowrap}
@@ -102,7 +102,7 @@ table.t{width:100%;border-collapse:collapse}
 @media (max-width:820px){
   .app{display:block;padding-bottom:calc(62px + env(safe-area-inset-bottom,0px))}
   .rail{position:fixed;top:auto;left:0;right:0;bottom:0;height:auto;z-index:30;flex-direction:row;padding:4px max(4px,env(safe-area-inset-right,0px)) calc(4px + env(safe-area-inset-bottom,0px)) max(4px,env(safe-area-inset-left,0px));border-right:0;border-top:1px solid var(--line);justify-content:space-around}
-  .brand{display:none}
+  .brand{display:none}.nav.ext{display:none}.head .doe-link{display:inline-flex}
   .nav{flex-direction:column;gap:1px;font-size:11px;padding:4px 6px;border-left:0;border-radius:3px;flex:1;min-width:0}.nav.end{margin-top:0}
   .main{padding-block:14px 24px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
   .kpis{grid-template-columns:repeat(2,minmax(0,1fr))}.kpi:nth-child(3){border-left:0}.kpi:nth-child(n+3){border-top:1px solid var(--line)}
@@ -233,7 +233,7 @@ async function nextNumber(kind,year){const{data,error}=await sb.rpc('devis_next_
 
 /* ========= Navigation ========= */
 const NAV=[['accueil','Accueil'],['devis','Devis'],['factures','Factures'],['clients','Clients'],['biblio','Bibliothèque'],['reglages','Réglages']];
-function renderRail(cur){$('#rail').innerHTML=`<div class="brand">MAGENCIA<small>Devis &amp; factures</small></div>`+NAV.map(([k,l])=>`<a class="nav${k===cur?' on':''}${k==='reglages'?' end':''}" href="#${k}"><svg viewBox="0 0 24 24" aria-hidden="true">${ICON[k]}</svg>${l}</a>`).join('')}
+function renderRail(cur){$('#rail').innerHTML=`<div class="brand">MAGENCIA<small>Devis &amp; factures</small></div>`+NAV.map(([k,l])=>`<a class="nav${k===cur?' on':''}${k==='reglages'?' end':''}" href="#${k}"><svg viewBox="0 0 24 24" aria-hidden="true">${ICON[k]}</svg>${l}</a>`).join('')+`<a class="nav ext" href="../"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 21V9l8-5 8 5v12M9 21v-7h6v7"/></svg>DOE Auto</a>`}
 async function route(){
   await flush();
   const h=location.hash.slice(1)||'accueil';
@@ -266,7 +266,7 @@ function viewHome(){
   const row=(q,tag)=>`<a class="list-item" href="#q-${q.id}"><div><span class="mono">${esc(q.number||'Brouillon')}</span> ${tag||''}<div>${esc(q.clientName)}</div><div class="muted">${esc(q.siteName||'')}</div></div><div class="num">${eur(compute(q).ht)}<div class="muted">${frD(q.validUntil)}</div></div></a>`;
   const ir=i=>`<a class="list-item" href="#f-${i.id}"><div><span class="mono">${esc(i.number)}</span><div>${esc(i.clientName)}</div></div><div class="num">${eur(resteOf(i))}<div class="muted">échéance ${frD(i.dueDate)}</div></div></a>`;
   $('#view').innerHTML=`
-  <div class="head"><h1>Accueil</h1><button class="btn pri" data-a="newQuote">Nouveau devis</button><button class="btn" data-a="newInvoice">Nouvelle facture</button></div>
+  <div class="head"><h1>Accueil</h1><a class="btn doe-link" href="../">DOE Auto</a><button class="btn pri" data-a="newQuote">Nouveau devis</button><button class="btn" data-a="newInvoice">Nouvelle facture</button></div>
   ${missing.length?`<div class="alert"><span><b>Émission des factures bloquée.</b> Il manque ${missing.length} information${missing.length>1?'s':''} sur l'entreprise : ${esc(missing.join(', '))}.</span><a class="btn sm" href="#reglages">Compléter</a></div>`:''}
   ${!S.counters.invoiceConfirmed?`<div class="alert"><span><b>Numéro de facture à confirmer.</b> Vérifie le dernier numéro émis sur Obat avant ta première facture ici.</span><a class="btn sm" href="#reglages">Confirmer</a></div>`:''}
   <div class="kpis">
@@ -337,6 +337,8 @@ function drawDoc(){
     if(d.status==='envoye')acts=`<button class="btn pri" data-a="qStatus" data-s="signe">Marquer signé</button><button class="btn" data-a="qStatus" data-s="refuse">Refusé</button><button class="btn" data-a="qStatus" data-s="brouillon">Modifier</button>`;
     if(d.status==='signe')acts=`<button class="btn pri" data-a="billMenu">Facturer</button>`;
     if(d.status==='refuse')acts=`<button class="btn" data-a="qStatus" data-s="envoye">Rouvrir</button>`;
+    if(d.doeChantierId)acts+=`<a class="btn" href="../?chantier=${esc(d.doeChantierId)}">Ouvrir le chantier DOE</a>`;
+    else if(d.status==='signe')acts+=`<button class="btn" data-a="createDoe">Créer le chantier DOE</button>`;
     acts+=`<button class="btn" data-a="dupQuote">Dupliquer</button>`;
   }else{
     if(d.status==='brouillon')acts=`<button class="btn pri" data-a="issue">Émettre</button><button class="btn dan" data-a="delDoc">Supprimer</button>`;
@@ -465,7 +467,7 @@ const ACT={
     try{let n=Cur.number;if(!n){const y=Cur.date.slice(0,4),k=await nextNumber('quote',y);n=`D-${y}-${String(k).padStart(3,'0')}`}await setDoc({number:n,status:'finalise'});toast(`Devis ${n} finalisé.`)}catch(e){e?.code==='busy'?toast('Numérotation occupée, réessaie dans quelques secondes.'):fail(e)}
   },
   async qStatus(el){await flush();await setDoc({status:el.dataset.s}).catch(fail)},
-  async dupQuote(){await flush();const{id,number,status,createdAt,imported,importedHT,importedTTC,...r}=clone(Cur);r.sections.forEach(s=>{s.id=uid();s.lines.forEach(l=>l.id=uid())});const nid=uid(),days=num(S.settings?.quoteDays)||30;await put('quotes',nid,{...r,number:null,status:'brouillon',date:today(),validUntil:addDays(today(),days),createdAt:new Date().toISOString()}).catch(fail);location.hash='q-'+nid;toast('Copie créée en brouillon.')},
+  async dupQuote(){await flush();const{id,number,status,createdAt,imported,importedHT,importedTTC,doeChantierId,...r}=clone(Cur);r.sections.forEach(s=>{s.id=uid();s.lines.forEach(l=>l.id=uid())});const nid=uid(),days=num(S.settings?.quoteDays)||30;await put('quotes',nid,{...r,number:null,status:'brouillon',date:today(),validUntil:addDays(today(),days),createdAt:new Date().toISOString()}).catch(fail);location.hash='q-'+nid;toast('Copie créée en brouillon.')},
   delDoc(){openModal(`<h2>Supprimer ce brouillon ?</h2><p>Il sera effacé définitivement.</p><div class="mf"><button class="btn" data-a="close">Annuler</button><button class="btn dan" data-a="delYes">Supprimer</button></div>`)},
   async delYes(){const c=CurKind==='q'?'quotes':'invoices',b=CurKind==='q'?'devis':'factures';const id=Cur.id;saveT=null;Cur=null;CurKind=null;closeModal();await db.doc(`${c}/${id}`).delete().catch(fail);location.hash=b},
   billMenu,billAcompte,billSituation,billFinale,
@@ -486,7 +488,7 @@ const ACT={
   editItem(el){itemModal(S.library.find(x=>x.id===el.dataset.id))},
   saveItem,delItem,
   importLib(){$('#libx').click()},
-  saveSettings,saveCounters,
+  saveSettings,saveCounters,createDoe,
   async logout(){await sb.auth.signOut();location.reload()},
 };
 document.addEventListener('click',e=>{
@@ -571,6 +573,34 @@ async function makeAvoir(){
   const secs=clone(Cur.sections);secs.forEach(s=>{s.id=uid();s.lines.forEach(l=>{l.id=uid();if(l.kind!=='texte')l.qty=-num(l.qty)})});
   const{clientId,clientName,siteId,siteName,siteAddress,subject,autoliq,tvaDefault,discount,retention,quoteId=null,quoteNumber=null}=Cur;
   await createInv({clientId,clientName,siteId,siteName,siteAddress,subject,autoliq,tvaDefault,discount,retention,quoteId,quoteNumber,refInvoice:Cur.number,type:'avoir',seq:0,status:'brouillon',number:null,date:today(),dueDate:today(),sections:secs,notes:`Avoir sur la facture ${Cur.number}.`,payments:[],createdAt:new Date().toISOString()});
+}
+
+/* ========= Liaison DOE Auto ========= */
+let doeBusy=false;
+async function createDoe(){
+  if(doeBusy||Cur.doeChantierId)return;doeBusy=true;
+  let chId=null;const lotIds=[];
+  const rows=(t,q)=>q.then(({data,error})=>{if(error)throw mapErr(error);return data});
+  try{
+    await flush();
+    const{data:{user}}=await sb.auth.getUser();
+    const m=await rows('membres',sb.from('membres').select('entreprise_id').eq('user_id',user.id).limit(1));
+    if(!m.length)return toast("Ton compte n'a pas d'entreprise dans DOE Auto.");
+    const ent=m[0].entreprise_id;
+    const[ch]=await rows('chantiers',sb.from('chantiers').insert({entreprise_id:ent,nom:Cur.siteName||Cur.subject||Cur.number,adresse:Cur.siteAddress||null,maitre_ouvrage:Cur.clientName||null,designation_travaux:Cur.subject||null,montant_ht:compute(Cur).ht}).select());
+    chId=ch.id;
+    for(let i=0;i<Cur.sections.length;i++){
+      const s=Cur.sections[i],[lot]=await rows('lots',sb.from('lots').insert({entreprise_id:ent,chantier_id:chId,numero:String(i+1),designation:s.title||`Section ${i+1}`,ordre:i}).select());
+      lotIds.push(lot.id);let n=0;
+      const ls=s.lines.filter(l=>l.kind!=='texte').map((l,j)=>({entreprise_id:ent,lot_id:lot.id,numero:`${i+1}.${++n}`,designation:l.label,unite:l.unit,quantite:num(l.qty),produit_id:null,ordre:j}));
+      if(ls.length)await rows('lignes_devis',sb.from('lignes_devis').insert(ls));
+    }
+    await setDoc({doeChantierId:chId});
+    toast('Chantier DOE créé. Ouvre-le pour associer les produits.');
+  }catch(e){
+    if(chId){try{if(lotIds.length){await sb.from('lignes_devis').delete().in('lot_id',lotIds);await sb.from('lots').delete().in('id',lotIds)}await sb.from('chantiers').delete().eq('id',chId)}catch{}}
+    console.error(e);toast('Chantier DOE non créé. Rien n\'a été gardé, réessaie.');
+  }finally{doeBusy=false}
 }
 
 /* ========= Émission ========= */
