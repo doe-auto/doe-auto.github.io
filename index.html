@@ -428,6 +428,7 @@ function render(){
     <button class="btn small ${S.view==="chantiers"||S.view==="chantier"?"":"ghost"}" data-act="home">Chantiers</button>
     <button class="btn small ${S.view==="prix"?"":"ghost"}" data-act="prix">Prix</button>
     <button class="btn small ${S.view==="entreprise"?"":"ghost"}" data-act="entreprise">Entreprise</button>
+    ${S.devisOk?`<a class="btn small ghost" href="devis/" style="text-decoration:none">Devis</a>`:""}
     <button class="btn small ghost" data-act="logout">Déconnexion</button></nav></header>`;
   let body="";
   if(S.view==="chantiers") body=viewChantiers();
@@ -1671,7 +1672,12 @@ document.addEventListener("submit",async e=>{
 async function onSession(session){
   S.user=session?.user||null;
   if(!S.user){ S.ent=null; render(); return; }
-  try{ await loadEntreprise(); if(S.ent) await goHome(); else render(); }
+  try{ await loadEntreprise();
+    try{ const r=await sb.rpc("devis_allowed"); S.devisOk=!r.error&&r.data===true; }catch(_){ S.devisOk=false; }
+    if(S.ent){ await goHome();
+      const cid=new URLSearchParams(location.search).get("chantier");
+      if(cid){ history.replaceState(null,"",location.pathname); if(S.chantiers.some(c=>c.id===cid)) await openChantier(cid); }
+    } else render(); }
   catch(e){ $("#app").innerHTML=`<div class="narrow box"><h2>Connexion à la base impossible</h2><div class="err">${esc(messageErreur(e))}</div><button class="btn ghost" data-act="logout">Se déconnecter</button></div>`; }
 }
 let lastUid;
